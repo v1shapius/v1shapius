@@ -6,6 +6,7 @@ from typing import Optional
 from database.database import DatabaseManager
 from locales import LocaleManager
 from models.penalty_settings import PenaltySettings
+from datetime import datetime
 
 class GuildSettingsModal(Modal, title="Настройки сервера"):
     def __init__(self, current_settings: Optional[PenaltySettings] = None):
@@ -677,6 +678,200 @@ class Admin(commands.Cog):
         except Exception as e:
             await interaction.followup.send(
                 f"Ошибка при получении информации: {str(e)}",
+                ephemeral=True
+            )
+
+    @app_commands.command(name="season_management", description="Управление сезонами")
+    @app_commands.describe(action="Действие с сезоном")
+    async def season_management(
+        self, 
+        interaction: discord.Interaction,
+        action: str
+    ):
+        """Управление сезонами"""
+        if not interaction.user.guild_permissions.administrator:
+            await interaction.response.send_message(
+                "❌ У вас нет прав администратора для управления сезонами.",
+                ephemeral=True
+            )
+            return
+        
+        await interaction.response.defer()
+        
+        try:
+            async with self.db.get_session() as session:
+                # Get current active season
+                current_season = await session.execute(
+                    "SELECT * FROM seasons WHERE is_active = true ORDER BY start_date DESC LIMIT 1"
+                )
+                current_season = current_season.scalar_one_or_none()
+                
+                if not current_season:
+                    await interaction.followup.send(
+                        "❌ Нет активного сезона для управления.",
+                        ephemeral=True
+                    )
+                    return
+                
+                action_lower = action.lower()
+                
+                if action_lower == "block_matches":
+                    # Block new matches
+                    current_season.block_new_matches()
+                    await session.commit()
+                    
+                    embed = discord.Embed(
+                        title="🚫 Создание матчей заблокировано",
+                        description=f"Сезон: {current_season.name}",
+                        color=discord.Color.red()
+                    )
+                    
+                    embed.add_field(
+                        name="Статус",
+                        value="Новые матчи заблокированы",
+                        inline=True
+                    )
+                    
+                    embed.add_field(
+                        name="Причина",
+                        value="Администратор заблокировал создание матчей",
+                        inline=True
+                    )
+                    
+                    await interaction.followup.send(embed=embed)
+                    
+                elif action_lower == "unblock_matches":
+                    # Unblock new matches
+                    current_season.new_matches_blocked = False
+                    await session.commit()
+                    
+                    embed = discord.Embed(
+                        title="✅ Создание матчей разблокировано",
+                        description=f"Сезон: {current_season.name}",
+                        color=discord.Color.green()
+                    )
+                    
+                    embed.add_field(
+                        name="Статус",
+                        value="Новые матчи разрешены",
+                        inline=True
+                    )
+                    
+                    await interaction.followup.send(embed=embed)
+                    
+                elif action_lower == "mark_ending":
+                    # Mark season as ending
+                    current_season.mark_as_ending()
+                    await session.commit()
+                    
+                    embed = discord.Embed(
+                        title="⚠️ Сезон помечен как завершающийся",
+                        description=f"Сезон: {current_season.name}",
+                        color=discord.Color.orange()
+                    )
+                    
+                    embed.add_field(
+                        name="Статус",
+                        value="Сезон завершается",
+                        inline=True
+                    )
+                    
+                    embed.add_field(
+                        name="Действия",
+                        value="• Новые матчи заблокированы\n• Рейтинг заблокирован\n• Игроки получат уведомления",
+                        inline=False
+                    )
+                    
+                    await interaction.followup.send(embed=embed)
+                    
+                elif action_lower == "force_end":
+                    # Force end season
+                    current_season.end_season()
+                    await session.commit()
+                    
+                    embed = discord.Embed(
+                        title="🏁 Сезон принудительно завершен",
+                        description=f"Сезон: {current_season.name}",
+                        color=discord.Color.red()
+                    )
+                    
+                    embed.add_field(
+                        name="Статус",
+                        value="Сезон завершен",
+                        inline=True
+                    )
+                    
+                    embed.add_field(
+                        name="Внимание",
+                        value="Все активные матчи будут аннулированы!",
+                        inline=False
+                    )
+                    
+                    await interaction.followup.send(embed=embed)
+                    
+                elif action_lower == "status":
+                    # Show detailed season status
+                    embed = discord.Embed(
+                        title=f"📊 Статус сезона: {current_season.name}",
+                        description="Детальная информация о сезоне",
+                        color=discord.Color.blue()
+                    )
+                    
+                    embed.add_field(
+                        name="Основная информация",
+                        value=f"**Название**: {current_season.name}\n**Начало**: {current_season.start_date.strftime('%d.%m.%Y %H:%M')}\n**Конец**: {current_season.end_date.strftime('%d.%m.%Y %H:%M')}",
+                        inline=False
+                    )
+                    
+                    embed.add_field(
+                        name="Статус",
+                        value=f"**Активен**: {'Да' if current_season.is_active else 'Нет'}\n**Завершается**: {'Да' if current_season.is_ending else 'Нет'}\n**Рейтинг заблокирован**: {'Да' if current_season.is_rating_locked else 'Нет'}",
+                        inline=True
+                    )
+                    
+                    embed.add_field(
+                        name="Блокировки",
+                        value=f"**Матчи заблокированы**: {'Да' if current_season.new_matches_blocked else 'Нет'}\n**Расчет рейтинга заблокирован**: {'Да' if current_season.rating_calculation_locked else 'Нет'}",
+                        inline=True
+                    )
+                    
+                    embed.add_field(
+                        name="Уведомления",
+                        value=f"**Предупреждение отправлено**: {'Да' if current_season.season_end_warning_sent else 'Нет'}",
+                        inline=True
+                    )
+                    
+                    # Calculate days until end
+                    days_until_end = (current_season.end_date - datetime.utcnow()).days
+                    embed.add_field(
+                        name="Время до завершения",
+                        value=f"**Дней**: {days_until_end}\n**Статус**: {current_season.get_status_description()}",
+                        inline=True
+                    )
+                    
+                    embed.add_field(
+                        name="Блокировка матчей",
+                        value=f"**Причина**: {current_season.get_blocking_reason()}",
+                        inline=True
+                    )
+                    
+                    await interaction.followup.send(embed=embed)
+                    
+                else:
+                    await interaction.followup.send(
+                        f"❌ Неизвестное действие: {action}\n\n"
+                        "Доступные действия:\n"
+                        "• `block_matches` - Заблокировать создание матчей\n"
+                        "• `unblock_matches` - Разблокировать создание матчей\n"
+                        "• `mark_ending` - Пометить сезон как завершающийся\n"
+                        "• `force_end` - Принудительно завершить сезон\n"
+                        "• `status` - Показать статус сезона",
+                        ephemeral=True
+                    )
+                    
+        except Exception as e:
+            await interaction.followup.send(
+                f"❌ Ошибка при управлении сезоном: {str(e)}",
                 ephemeral=True
             )
 

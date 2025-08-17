@@ -192,61 +192,89 @@ class MatchManagement(commands.Cog):
         
     @app_commands.command(name="challenge", description="Вызвать игрока на матч")
     @app_commands.describe(
-        opponent="Игрок, которого вызываете на матч",
-        format="Формат матча (bo1, bo2, bo3)"
+        opponent="Игрок для вызова",
+        format="Формат матча (Bo1, Bo2, Bo3)"
     )
     async def challenge(
         self, 
         interaction: discord.Interaction, 
         opponent: discord.Member,
-        format: str = "bo1"
+        format: str = "Bo1"
     ):
         """Вызвать игрока на матч"""
-        # Check if user is challenging themselves
-        if interaction.user.id == opponent.id:
-            await interaction.response.send_message(
-                "Вы не можете вызвать сами себя на матч!",
-                ephemeral=True
-            )
-            return
-            
-        # Check if opponent is a bot
-        if opponent.bot:
-            await interaction.response.send_message(
-                "Вы не можете вызвать бота на матч!",
-                ephemeral=True
-            )
-            return
-            
-        # Validate match format
-        if format.lower() not in ['bo1', 'bo2', 'bo3']:
-            await interaction.response.send_message(
-                "Неверный формат матча. Используйте: bo1, bo2, или bo3",
-                ephemeral=True
-            )
-            return
-            
-        # Check if matches can only be created in specific channel
-        try:
-            async with self.db.get_session() as session:
-                settings = await session.get(PenaltySettings, interaction.guild_id)
-                
-                if settings and settings.match_channel_id:
-                    if interaction.channel_id != settings.match_channel_id:
-                        match_channel = interaction.guild.get_channel(settings.match_channel_id)
-                        await interaction.response.send_message(
-                            f"❌ Матчи можно создавать только в канале {match_channel.mention}",
-                            ephemeral=True
-                        )
-                        return
-                        
-        except Exception as e:
-            # If there's an error checking settings, allow the command
-            pass
-            
         await interaction.response.defer()
         
         try:
+            # Check if user is challenging themselves
+            if interaction.user.id == opponent.id:
+                await interaction.followup.send(
+                    "❌ Вы не можете вызвать сами себя на матч.",
+                    ephemeral=True
+                )
+                return
+            
+            # Check if opponent is a bot
+            if opponent.bot:
+                await interaction.followup.send(
+                    "❌ Вы не можете вызвать бота на матч.",
+                    ephemeral=True
+                )
+                return
+            
+            # Check season status and blocking
+            season_manager = self.bot.get_cog('SeasonManager')
+            if season_manager:
+                can_create, reason = await season_manager.can_create_new_match(interaction.guild_id)
+                if not can_create:
+                    embed = discord.Embed(
+                        title="🚫 Создание матчей заблокировано",
+                        description=f"**Причина**: {reason}",
+                        color=discord.Color.red()
+                    )
+                    
+                    # Get season status for more details
+                    season = await season_manager.get_season_status(interaction.guild_id)
+                    if season:
+                        embed.add_field(
+                            name="Информация о сезоне",
+                            value=f"**Сезон**: {season.name}\n**Статус**: {season.get_status_description()}",
+                            inline=False
+                        )
+                        
+                        if season.is_ending_soon:
+                            embed.add_field(
+                                name="⚠️ Важно",
+                                value="Завершите все активные матчи до окончания сезона!",
+                                inline=False
+                            )
+                    
+                    await interaction.followup.send(embed=embed, ephemeral=True)
+                    return
+            
+            # Check if matches are restricted to specific channel
+            async with self.db.get_session() as session:
+                penalty_settings = await session.execute(
+                    "SELECT match_channel_id FROM penalty_settings WHERE guild_id = :guild_id",
+                    {"guild_id": interaction.guild_id}
+                )
+                penalty_settings = penalty_settings.scalar_one_or_none()
+                
+                if penalty_settings and penalty_settings.match_channel_id:
+                    if interaction.channel_id != penalty_settings.match_channel_id:
+                        await interaction.followup.send(
+                            f"❌ Матчи можно создавать только в канале <#{penalty_settings.match_channel_id}>",
+                            ephemeral=True
+                        )
+                        return
+            
+            # Validate match format
+            if format.lower() not in ['bo1', 'bo2', 'bo3']:
+                await interaction.followup.send(
+                    "Неверный формат матча. Используйте: bo1, bo2, или bo3",
+                    ephemeral=True
+                )
+                return
+            
             # Check if there's already an active match between these players
             async with self.db.get_session() as session:
                 active_match = await session.execute(

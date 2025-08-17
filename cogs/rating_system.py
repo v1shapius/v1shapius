@@ -9,6 +9,7 @@ from locales import LocaleManager
 from models.rating import Rating
 from models.season import Season
 from models.penalty_settings import PenaltySettings
+from datetime import datetime
 
 class LeaderboardView(View):
     def __init__(self, current_page: int = 0, total_pages: int = 1):
@@ -385,13 +386,13 @@ class RatingSystem(commands.Cog):
             )
     
     @app_commands.command(name="season", description="Информация о текущем сезоне")
-    async def view_season(self, interaction: discord.Interaction):
+    async def season_info(self, interaction: discord.Interaction):
         """Показать информацию о текущем сезоне"""
         await interaction.response.defer()
         
         try:
             async with self.db.get_session() as session:
-                # Get current season
+                # Get current active season
                 current_season = await session.execute(
                     "SELECT * FROM seasons WHERE is_active = true ORDER BY start_date DESC LIMIT 1"
                 )
@@ -405,12 +406,6 @@ class RatingSystem(commands.Cog):
                     return
                 
                 # Get season statistics
-                total_players = await session.execute(
-                    "SELECT COUNT(DISTINCT player_id) FROM ratings WHERE season_id = :season_id",
-                    {"season_id": current_season.id}
-                )
-                total_players = total_players.scalar()
-                
                 total_matches = await session.execute(
                     "SELECT COUNT(*) FROM matches WHERE season_id = :season_id",
                     {"season_id": current_season.id}
@@ -423,29 +418,73 @@ class RatingSystem(commands.Cog):
                 )
                 completed_matches = completed_matches.scalar()
                 
-                # Create season embed
+                active_matches = await session.execute(
+                    "SELECT COUNT(*) FROM matches WHERE season_id = :season_id AND status NOT IN ('complete', 'annulled')",
+                    {"season_id": current_season.id}
+                )
+                active_matches = active_matches.scalar()
+                
+                # Calculate days until end
+                days_until_end = (current_season.end_date - datetime.utcnow()).days
+                
+                # Create season info embed
                 embed = discord.Embed(
                     title=f"📅 Сезон: {current_season.name}",
-                    color=discord.Color.purple()
+                    description="Информация о текущем сезоне",
+                    color=discord.Color.blue()
                 )
                 
                 embed.add_field(
-                    name="Даты",
-                    value=f"Начало: {current_season.start_date.strftime('%Y-%m-%d')} | Конец: {current_season.end_date.strftime('%Y-%m-%d') if current_season.end_date else 'Не определен'}",
-                    inline=False
+                    name="📊 Статистика",
+                    value=f"Всего матчей: {total_matches}\nЗавершено: {completed_matches}\nАктивных: {active_matches}",
+                    inline=True
                 )
                 
                 embed.add_field(
-                    name="Статистика",
-                    value=f"Участников: {total_players} | Всего матчей: {total_matches} | Завершено: {completed_matches}",
-                    inline=False
+                    name="⏰ Время",
+                    value=f"Начало: {current_season.start_date.strftime('%d.%m.%Y')}\nКонец: {current_season.end_date.strftime('%d.%m.%Y')}",
+                    inline=True
                 )
                 
                 embed.add_field(
-                    name="Glicko-2 параметры",
-                    value=f"Начальный RD: {current_season.glicko2_rd_initial} | Начальная волатильность: {current_season.glicko2_volatility_initial}",
-                    inline=False
+                    name="📈 Статус",
+                    value=current_season.get_status_description(),
+                    inline=True
                 )
+                
+                # Add season end information
+                if current_season.is_ending_soon or current_season.is_ending:
+                    embed.color = discord.Color.orange()
+                    
+                    if days_until_end > 0:
+                        embed.add_field(
+                            name="⚠️ Внимание!",
+                            value=f"Сезон завершается через **{days_until_end}** дней!",
+                            inline=False
+                        )
+                    else:
+                        embed.add_field(
+                            name="🚨 Срочно!",
+                            value="Сезон завершается сегодня!",
+                            inline=False
+                        )
+                    
+                    embed.add_field(
+                        name="📋 Действия",
+                        value="• Завершите все активные матчи\n• Новые матчи заблокированы\n• Рейтинг будет зафиксирован",
+                        inline=False
+                    )
+                
+                # Add blocking information
+                if current_season.should_block_new_matches:
+                    embed.color = discord.Color.red()
+                    embed.add_field(
+                        name="🚫 Ограничения",
+                        value=f"**Причина**: {current_season.get_blocking_reason()}",
+                        inline=False
+                    )
+                
+                embed.set_footer(text=f"ID сезона: {current_season.id}")
                 
                 await interaction.followup.send(embed=embed)
                 

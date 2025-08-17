@@ -16,6 +16,7 @@ from cogs.rating_system import RatingSystem
 from cogs.voice_control import VoiceControl
 from cogs.admin import Admin
 from cogs.draft_verification import DraftVerification
+from services.season_manager import SeasonManager
 
 # Configure logging
 logging.basicConfig(
@@ -88,6 +89,15 @@ class RatingBot(commands.Bot):
                 name="rating matches"
             )
         )
+
+        # Initialize database
+        db = DatabaseManager()
+        await db.initialize()
+        
+        # Start season manager service
+        season_manager = SeasonManager(self)
+        asyncio.create_task(season_manager.start_monitoring())
+        logger.info("Season manager service started")
     
     async def on_guild_join(self, guild):
         """Called when bot joins a new guild"""
