@@ -1,10 +1,89 @@
+# Core Discord bot dependencies
 discord.py==2.3.2
-sqlalchemy==2.0.23
-asyncpg==0.29.0
-alembic==1.12.1
-redis==5.0.1
-celery==5.3.4
-pydantic==2.5.0
 python-dotenv==1.0.0
+
+# Database
+asyncpg==0.29.0
+sqlalchemy==2.0.23
+alembic==1.13.1
+
+# Data validation and serialization
+pydantic==2.5.0
+pydantic-settings==2.1.0
+
+# HTTP and networking
 aiohttp==3.9.1
+aiofiles==23.2.1
+
+# Date and time handling
 python-dateutil==2.8.2
+pytz==2023.3
+
+# Utilities
+click==8.1.7
+rich==13.7.0
+tqdm==4.66.1
+
+# Testing dependencies
+pytest==7.4.3
+pytest-asyncio==0.21.1
+pytest-cov==4.1.0
+pytest-mock==3.12.0
+pytest-xdist==3.3.1
+pytest-timeout==2.2.0
+pytest-html==4.1.1
+
+# Code quality and linting
+black==23.12.1
+flake8==7.0.0
+mypy==1.8.0
+isort==5.13.2
+pre-commit==3.6.0
+
+# Security and cryptography
+cryptography==45.0.6
+bcrypt==4.1.2
+passlib==1.7.4
+
+# Monitoring and logging
+structlog==23.2.0
+prometheus-client==0.19.0
+
+# Data analysis and ML (for security features)
+numpy==1.26.4
+pandas==2.1.4
+scikit-learn==1.3.2
+
+# Background task processing
+celery==5.3.4
+redis==5.0.1
+
+# API and web framework
+fastapi==0.104.1
+uvicorn==0.24.0
+
+# Configuration management
+pyyaml==6.0.1
+toml==0.10.2
+
+# Development tools
+ipython==8.18.1
+jupyter==1.0.0
+notebook==7.0.6
+
+# Documentation
+sphinx==7.2.6
+sphinx-rtd-theme==2.0.0
+myst-parser==2.0.0
+
+# Performance and optimization
+psutil==5.9.6
+memory-profiler==0.61.0
+line-profiler==4.1.2
+
+# Docker and deployment
+docker==6.1.3
+docker-compose==1.29.2
+
+# Environment and system
+platformdirs==4.1.0

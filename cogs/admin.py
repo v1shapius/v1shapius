@@ -1,404 +1,887 @@
 import discord
 from discord.ext import commands
 from discord import app_commands
-from discord.ui import Button, View, Modal, TextInput
-import logging
+from discord.ui import Modal, TextInput, View, Button
 from typing import Optional
-from datetime import datetime, timedelta
-
+from database.database import DatabaseManager
+from locales import LocaleManager
 from models.penalty_settings import PenaltySettings
-from models.season import Season
-from locales import get_text
-from config.config import Config
+from datetime import datetime
 
-logger = logging.getLogger(__name__)
-
-class AdminSettingsModal(Modal, title="Admin Settings"):
-    """Modal for updating admin settings"""
-    
-    def __init__(self, setting_type: str):
+class GuildSettingsModal(Modal, title="Настройки сервера"):
+    def __init__(self, current_settings: Optional[PenaltySettings] = None):
         super().__init__()
-        self.setting_type = setting_type
+        self.current_settings = current_settings
         
-        if setting_type == "penalty":
-            self.penalty_input = TextInput(
-                label="Restart Penalty (seconds)",
-                placeholder="30",
-                required=True,
-                max_length=5
-            )
-            self.max_restarts_input = TextInput(
-                label="Max Restarts Before Penalty",
-                placeholder="0",
-                required=True,
-                max_length=3
-            )
-            
-            self.add_item(self.penalty_input)
-            self.add_item(self.max_restarts_input)
-            
-        elif setting_type == "season":
-            self.name_input = TextInput(
-                label="Season Name",
-                placeholder="Season 2",
-                required=True,
-                max_length=50
-            )
-            self.duration_input = TextInput(
-                label="Duration (days)",
-                placeholder="90",
-                required=True,
-                max_length=5
-            )
-            
-            self.add_item(self.name_input)
-            self.add_item(self.duration_input)
+        self.restart_penalty = TextInput(
+            label="Штраф за рестарт (секунды)",
+            placeholder="30",
+            default=str(current_settings.restart_penalty) if current_settings else "30",
+            required=True,
+            min_length=1,
+            max_length=3
+        )
+        
+        self.add_item(self.restart_penalty)
+
+class DetailedPenaltyModal(Modal, title="Детальная настройка штрафов за рестарты"):
+    def __init__(self, current_settings: Optional[PenaltySettings] = None):
+        super().__init__()
+        self.current_settings = current_settings
+        
+        # Get current values or defaults
+        penalties = current_settings.restart_penalties if current_settings else {
+            "free_restarts": 2,
+            "penalty_tiers": {"3": 5, "4": 15, "5": 999}
+        }
+        
+        self.free_restarts = TextInput(
+            label="Количество бесплатных рестартов",
+            placeholder="2",
+            default=str(penalties.get("free_restarts", 2)),
+            required=True,
+            min_length=1,
+            max_length=2
+        )
+        
+        self.tier3_penalty = TextInput(
+            label="Штраф за 3-й рестарт (секунды)",
+            placeholder="5",
+            default=str(penalties.get("penalty_tiers", {}).get("3", 5)),
+            required=True,
+            min_length=1,
+            max_length=3
+        )
+        
+        self.tier4_penalty = TextInput(
+            label="Штраф за 4-й рестарт (секунды)",
+            placeholder="15",
+            default=str(penalties.get("penalty_tiers", {}).get("4", 15)),
+            required=True,
+            min_length=1,
+            max_length=3
+        )
+        
+        self.tier5_penalty = TextInput(
+            label="Штраф за 5-й рестарт (секунды)",
+            placeholder="999",
+            default=str(penalties.get("penalty_tiers", {}).get("5", 999)),
+            required=True,
+            min_length=1,
+            max_length=3
+        )
+        
+        self.add_item(self.free_restarts)
+        self.add_item(self.tier3_penalty)
+        self.add_item(self.tier4_penalty)
+        self.add_item(self.tier5_penalty)
     
     async def on_submit(self, interaction: discord.Interaction):
         """Handle modal submission"""
         try:
-            if self.setting_type == "penalty":
-                penalty = int(self.penalty_input.value)
-                max_restarts = int(self.max_restarts_input.value)
+            # Validate input
+            free_restarts = int(self.free_restarts.value)
+            tier3_penalty = int(self.tier3_penalty.value)
+            tier4_penalty = int(self.tier4_penalty.value)
+            tier5_penalty = int(self.tier5_penalty.value)
+            
+            if free_restarts < 0 or tier3_penalty < 0 or tier4_penalty < 0 or tier5_penalty < 0:
+                await interaction.response.send_message(
+                    "❌ Штрафы не могут быть отрицательными.",
+                    ephemeral=True
+                )
+                return
+            
+            # Update penalty settings
+            session = await interaction.client.db_manager.get_session()
+            async with session as session:
+                settings = await session.get(PenaltySettings, interaction.guild_id)
                 
-                if penalty < 0 or max_restarts < 0:
+                if not settings:
                     await interaction.response.send_message(
-                        "❌ Values must be non-negative.",
+                        "❌ Настройки сервера не найдены.",
                         ephemeral=True
                     )
                     return
                 
-                await self.update_penalty_settings(interaction, penalty, max_restarts)
+                # Update detailed penalties
+                settings.restart_penalties = {
+                    "free_restarts": free_restarts,
+                    "penalty_tiers": {
+                        "3": tier3_penalty,
+                        "4": tier4_penalty,
+                        "5": tier5_penalty
+                    }
+                }
                 
-            elif self.setting_type == "season":
-                name = self.name_input.value.strip()
-                duration = int(self.duration_input.value)
+                await session.commit()
                 
-                if duration <= 0:
-                    await interaction.response.send_message(
-                        "❌ Duration must be positive.",
-                        ephemeral=True
-                    )
-                    return
+                # Create confirmation embed
+                embed = discord.Embed(
+                    title="✅ Штрафы за рестарты обновлены",
+                    description="Новая конфигурация штрафов",
+                    color=discord.Color.green()
+                )
                 
-                await self.create_new_season(interaction, name, duration)
+                embed.add_field(
+                    name="🆓 Бесплатные рестарты",
+                    value=f"Первые {free_restarts} рестарта бесплатны",
+                    inline=False
+                )
+                
+                embed.add_field(
+                    name="💰 Штрафные рестарты",
+                    value=f"""
+                    3-й рестарт: +{tier3_penalty} секунд
+                    4-й рестарт: +{tier4_penalty} секунд
+                    5-й рестарт: +{tier5_penalty} секунд
+                    """,
+                    inline=False
+                )
+                
+                # Add examples
+                examples = []
+                for i in range(1, 6):
+                    total_penalty = settings.calculate_total_penalty(i)
+                    examples.append(f"{i} рестарт: +{total_penalty}с")
+                
+                embed.add_field(
+                    name="📊 Примеры расчета",
+                    value="\n".join(examples),
+                    inline=False
+                )
+                
+                await interaction.response.send_message(embed=embed, ephemeral=True)
                 
         except ValueError:
             await interaction.response.send_message(
-                "❌ Invalid input. Please enter valid numbers.",
+                "❌ Пожалуйста, введите корректные числовые значения.",
                 ephemeral=True
             )
-    
-    async def update_penalty_settings(self, interaction: discord.Interaction, penalty: int, max_restarts: int):
-        """Update penalty settings for the guild"""
-        try:
-            bot = interaction.client
+        except Exception as e:
+            await interaction.response.send_message(
+                f"❌ Ошибка при обновлении штрафов: {str(e)}",
+                ephemeral=True
+            )
+
+class ChannelSelectionView(View):
+    def __init__(self, guild: discord.Guild, settings_type: str):
+        super().__init__(timeout=300)
+        self.guild = guild
+        self.settings_type = settings_type
+        self.selected_channel = None
+        
+        # Add channel selection buttons
+        for channel in guild.channels:
+            if isinstance(channel, (discord.TextChannel, discord.CategoryChannel)):
+                label = f"#{channel.name}" if isinstance(channel, discord.TextChannel) else f"📁 {channel.name}"
+                self.add_item(Button(
+                    label=label[:100],  # Discord limit
+                    custom_id=f"select_{channel.id}",
+                    style=discord.ButtonStyle.secondary
+                ))
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if not interaction.data.get("custom_id", "").startswith("select_"):
+            return False
             
-            async with bot.db_manager.get_session() as session:
-                # Get or create penalty settings
-                penalty_settings = await session.get(PenaltySettings, interaction.guild.id)
+        channel_id = int(interaction.data["custom_id"].replace("select_", ""))
+        channel = self.guild.get_channel(channel_id)
+        
+        if channel:
+            self.selected_channel = channel
+            await interaction.response.send_message(
+                f"Выбран канал: {channel.mention}",
+                ephemeral=True
+            )
+            self.stop()
+        
+        return True
+
+class Admin(commands.Cog):
+    def __init__(self, bot: commands.Bot):
+        self.bot = bot
+        self.db = DatabaseManager()
+        self.locale = LocaleManager()
+        
+    @app_commands.command(name="settings", description="Настройки сервера")
+    @app_commands.describe(
+        penalty="Штраф за рестарт в секундах (упрощенная настройка)",
+        match_channel="Канал для создания матчей",
+        leaderboard_channel="Канал для лидерборда",
+        audit_channel="Канал для аудита",
+        voice_category="Категория для голосовых каналов"
+    )
+    async def settings(
+        self, 
+        interaction: discord.Interaction,
+        penalty: Optional[int] = None,
+        match_channel: Optional[discord.TextChannel] = None,
+        leaderboard_channel: Optional[discord.TextChannel] = None,
+        audit_channel: Optional[discord.TextChannel] = None,
+        voice_category: Optional[discord.CategoryChannel] = None
+    ):
+        """Настройки сервера"""
+        if not interaction.user.guild_permissions.administrator:
+            await interaction.response.send_message(
+                "У вас нет прав администратора для изменения настроек.",
+                ephemeral=True
+            )
+            return
+            
+        await interaction.response.defer()
+        
+        try:
+            # Get or create guild settings
+            session = await self.db.get_session()
+            async with session as session:
+                settings = await session.get(PenaltySettings, interaction.guild_id)
                 
-                if not penalty_settings:
-                    penalty_settings = PenaltySettings(
-                        discord_guild_id=interaction.guild.id,
-                        restart_penalty_seconds=penalty,
-                        max_restarts_before_penalty=max_restarts,
-                        description="Updated by admin"
+                if not settings:
+                    settings = PenaltySettings(
+                        guild_id=interaction.guild_id,
+                        restart_penalty=30
                     )
-                    session.add(penalty_settings)
-                else:
-                    penalty_settings.restart_penalty_seconds = penalty
-                    penalty_settings.max_restarts_before_penalty = max_restarts
-                    penalty_settings.updated_at = datetime.now()
+                    session.add(settings)
+                
+                # Update settings if provided
+                if penalty is not None:
+                    settings.restart_penalty = penalty
+                if match_channel is not None:
+                    settings.match_channel_id = match_channel.id
+                if leaderboard_channel is not None:
+                    settings.leaderboard_channel_id = leaderboard_channel.id
+                if audit_channel is not None:
+                    settings.audit_channel_id = audit_channel.id
+                if voice_category is not None:
+                    settings.voice_category_id = voice_category.id
                 
                 await session.commit()
-            
-            embed = discord.Embed(
-                title="⚙️ Penalty Settings Updated",
-                description="Restart penalty settings have been updated successfully.",
-                color=discord.Color.green()
-            )
-            embed.add_field(name="Restart Penalty", value=f"{penalty} seconds", inline=True)
-            embed.add_field(name="Max Restarts", value=max_restarts, inline=True)
-            
-            await interaction.response.send_message(embed=embed)
-            
+                
+                # Create settings embed
+                embed = discord.Embed(
+                    title="⚙️ Настройки сервера",
+                    color=discord.Color.blue()
+                )
+                
+                embed.add_field(
+                    name="Штраф за рестарт (упрощенный)",
+                    value=f"{settings.restart_penalty} секунд",
+                    inline=True
+                )
+                
+                # Show detailed penalty info
+                penalties = settings.restart_penalties
+                free_restarts = penalties.get("free_restarts", 2)
+                penalty_tiers = penalties.get("penalty_tiers", {})
+                
+                detailed_penalty_text = f"Бесплатных: {free_restarts}\n"
+                for tier, penalty in sorted(penalty_tiers.items(), key=lambda x: int(x[0])):
+                    detailed_penalty_text += f"{tier}-й: +{penalty}с\n"
+                
+                embed.add_field(
+                    name="Детальные штрафы",
+                    value=detailed_penalty_text.strip(),
+                    inline=True
+                )
+                
+                if settings.match_channel_id:
+                    channel = interaction.guild.get_channel(settings.match_channel_id)
+                    embed.add_field(
+                        name="Канал для матчей",
+                        value=channel.mention if channel else "Не найден",
+                        inline=True
+                    )
+                
+                if settings.leaderboard_channel_id:
+                    channel = interaction.guild.get_channel(settings.leaderboard_channel_id)
+                    embed.add_field(
+                        name="Канал лидерборда",
+                        value=channel.mention if channel else "Не найден",
+                        inline=True
+                    )
+                
+                if settings.audit_channel_id:
+                    channel = interaction.guild.get_channel(settings.audit_channel_id)
+                    embed.add_field(
+                        name="Канал аудита",
+                        value=channel.mention if channel else "Не найден",
+                        inline=True
+                    )
+                
+                if settings.voice_category_id:
+                    category = interaction.guild.get_channel(settings.voice_category_id)
+                    embed.add_field(
+                        name="Категория голосовых каналов",
+                        value=f"📁 {category.name}" if category else "Не найдена",
+                        inline=True
+                    )
+                
+                await interaction.followup.send(embed=embed)
+                
         except Exception as e:
-            logger.error(f"Error updating penalty settings: {e}")
-            await interaction.response.send_message(
-                "❌ An error occurred while updating penalty settings.",
+            await interaction.followup.send(
+                f"Ошибка при обновлении настроек: {str(e)}",
                 ephemeral=True
             )
-    
-    async def create_new_season(self, interaction: discord.Interaction, name: str, duration: int):
-        """Create a new season"""
-        try:
-            bot = interaction.client
+
+    @app_commands.command(name="penalties", description="Детальная настройка штрафов за рестарты")
+    async def configure_penalties(self, interaction: discord.Interaction):
+        """Детальная настройка штрафов за рестарты"""
+        if not interaction.user.guild_permissions.administrator:
+            await interaction.response.send_message(
+                "У вас нет прав администратора для изменения настроек.",
+                ephemeral=True
+            )
+            return
             
-            async with bot.db_manager.get_session() as session:
-                # End current season if exists
-                current_season = await self.get_current_season(session)
+        try:
+            # Get current settings
+            session = await self.db.get_session()
+            async with session as session:
+                settings = await session.get(PenaltySettings, interaction.guild_id)
+                
+                if not settings:
+                    await interaction.response.send_message(
+                        "Сначала настройте базовые параметры сервера командой `/settings`",
+                        ephemeral=True
+                    )
+                    return
+                
+                # Open detailed penalty modal
+                modal = DetailedPenaltyModal(settings)
+                await interaction.response.send_modal(modal)
+                
+        except Exception as e:
+            await interaction.response.send_message(
+                f"Ошибка при открытии настроек штрафов: {str(e)}",
+                ephemeral=True
+            )
+
+    @app_commands.command(name="penalty_info", description="Информация о текущих штрафах за рестарты")
+    async def penalty_info(self, interaction: discord.Interaction):
+        """Показать информацию о текущих штрафах за рестарты"""
+        await interaction.response.defer()
+        
+        try:
+            session = await self.db.get_session()
+            async with session as session:
+                settings = await session.get(PenaltySettings, interaction.guild_id)
+                
+                if not settings:
+                    await interaction.followup.send(
+                        "Настройки сервера не найдены. Используйте `/settings` для настройки.",
+                        ephemeral=True
+                    )
+                    return
+                
+                # Create penalty info embed
+                embed = discord.Embed(
+                    title="⚡ Штрафы за рестарты",
+                    description="Текущая конфигурация штрафов",
+                    color=discord.Color.orange()
+                )
+                
+                penalties = settings.restart_penalties
+                free_restarts = penalties.get("free_restarts", 2)
+                penalty_tiers = penalties.get("penalty_tiers", {})
+                
+                embed.add_field(
+                    name="🆓 Бесплатные рестарты",
+                    value=f"Первые {free_restarts} рестарта бесплатны",
+                    inline=False
+                )
+                
+                if penalty_tiers:
+                    penalty_text = ""
+                    for tier, penalty in sorted(penalty_tiers.items(), key=lambda x: int(x[0])):
+                        penalty_text += f"**{tier}-й рестарт**: +{penalty} секунд\n"
+                    embed.add_field(
+                        name="💰 Штрафные рестарты",
+                        value=penalty_text,
+                        inline=False
+                    )
+                
+                # Add examples
+                examples = []
+                for i in range(1, 6):
+                    total_penalty = settings.calculate_total_penalty(i)
+                    examples.append(f"{i} рестарт: +{total_penalty}с")
+                
+                embed.add_field(
+                    name="📊 Примеры расчета",
+                    value="\n".join(examples),
+                    inline=False
+                )
+                
+                embed.add_field(
+                    name="⚙️ Упрощенная настройка",
+                    value=f"Общий штраф: {settings.restart_penalty}с за каждый рестарт",
+                    inline=False
+                )
+                
+                embed.set_footer(text="Используйте /penalties для изменения настроек")
+                
+                await interaction.followup.send(embed=embed)
+                
+        except Exception as e:
+            await interaction.followup.send(
+                f"Ошибка при получении информации о штрафах: {str(e)}",
+                ephemeral=True
+            )
+
+    @app_commands.command(name="setup_channels", description="Интерактивная настройка каналов")
+    async def setup_channels(self, interaction: discord.Interaction):
+        """Интерактивная настройка каналов"""
+        if not interaction.user.guild_permissions.administrator:
+            await interaction.response.send_message(
+                "У вас нет прав администратора для изменения настроек.",
+                ephemeral=True
+            )
+            return
+            
+        await interaction.response.send_message(
+            "Выберите канал для создания матчей:",
+            view=ChannelSelectionView(interaction.guild, "match"),
+            ephemeral=True
+        )
+
+    @app_commands.command(name="post_instructions", description="Опубликовать инструкции по работе бота")
+    async def post_instructions(self, interaction: discord.Interaction):
+        """Опубликовать инструкции по работе бота"""
+        if not interaction.user.guild_permissions.administrator:
+            await interaction.response.send_message(
+                "У вас нет прав администратора для публикации инструкций.",
+                ephemeral=True
+            )
+            return
+            
+        await interaction.response.defer()
+        
+        try:
+            # Create instructions embed
+            embed = discord.Embed(
+                title="🎮 Discord Rating Bot - Инструкция",
+                description="Бот для проведения рейтинговых матчей между игроками",
+                color=discord.Color.green()
+            )
+            
+            embed.add_field(
+                name="📋 Основные команды",
+                value="""
+                `/challenge @игрок` - Вызвать игрока на матч
+                `/rating` - Посмотреть свой рейтинг
+                `/leaderboard` - Таблица лидеров
+                `/stats` - Статистика игрока
+                """,
+                inline=False
+            )
+            
+            embed.add_field(
+                name="🏆 Форматы матчей",
+                value="""
+                **Bo1** - Одна игра, побеждает игрок с лучшим временем
+                **Bo2** - Две игры, побеждает игрок с меньшей суммой времени
+                **Bo3** - Три игры, побеждает игрок с большим количеством побед
+                """,
+                inline=False
+            )
+            
+            embed.add_field(
+                name="⚡ Штрафы за рестарты",
+                value="Гибкая система штрафов с бесплатными рестартами и настраиваемыми уровнями",
+                inline=False
+            )
+            
+            embed.add_field(
+                name="📊 Рейтинговая система",
+                value="Используется система Glicko-2 для расчета рейтинга игроков",
+                inline=False
+            )
+            
+            embed.add_field(
+                name="🔧 Административные команды",
+                value="""
+                `/settings` - Настройки сервера
+                `/penalties` - Детальная настройка штрафов
+                `/penalty_info` - Информация о штрафах
+                `/setup_channels` - Настройка каналов
+                `/new_season` - Создать новый сезон
+                """,
+                inline=False
+            )
+            
+            embed.set_footer(text="Для получения помощи обратитесь к администратору сервера")
+            
+            # Send instructions
+            message = await interaction.channel.send(embed=embed)
+            
+            # Pin the message
+            await message.pin()
+            
+            # Update database with message ID
+            session = await self.db.get_session()
+            async with session as session:
+                settings = await session.get(PenaltySettings, interaction.guild_id)
+                
+                if not settings:
+                    settings = PenaltySettings(
+                        guild_id=interaction.guild_id,
+                        restart_penalty=30
+                    )
+                    session.add(settings)
+                
+                settings.instructions_message_id = message.id
+                await session.commit()
+            
+            await interaction.followup.send(
+                f"Инструкции опубликованы и закреплены в {interaction.channel.mention}",
+                ephemeral=True
+            )
+            
+        except Exception as e:
+            await interaction.followup.send(
+                f"Ошибка при публикации инструкций: {str(e)}",
+                ephemeral=True
+            )
+
+    @app_commands.command(name="new_season", description="Создать новый сезон")
+    async def new_season(self, interaction: discord.Interaction, name: str):
+        """Создать новый сезон"""
+        if not interaction.user.guild_permissions.administrator:
+            await interaction.response.send_message(
+                "У вас нет прав администратора для создания сезонов.",
+                ephemeral=True
+            )
+            return
+            
+        await interaction.response.defer()
+        
+        try:
+            from models.season import Season
+            from datetime import date, timedelta
+            
+            session = await self.db.get_session()
+            async with session as session:
+                # End current active season
+                current_season = await session.execute(
+                    "SELECT * FROM seasons WHERE is_active = true"
+                )
+                current_season = current_season.scalar_one_or_none()
+                
                 if current_season:
-                    current_season.end_season()
-                    await session.commit()
+                    current_season.is_active = False
                 
                 # Create new season
                 new_season = Season(
                     name=name,
-                    start_date=datetime.now(),
-                    is_active=True,
-                    initial_rating=Config.INITIAL_RATING,
-                    k_factor_new=Config.K_FACTOR_NEW,
-                    k_factor_established=Config.K_FACTOR_ESTABLISHED,
-                    established_threshold=Config.ESTABLISHED_THRESHOLD
+                    start_date=date.today(),
+                    end_date=date.today() + timedelta(days=90),
+                    is_active=True
                 )
                 
                 session.add(new_season)
                 await session.commit()
-                await session.refresh(new_season)
-            
-            embed = discord.Embed(
-                title="📅 New Season Created",
-                description=f"Season '{name}' has been created successfully.",
-                color=discord.Color.blue()
-            )
-            embed.add_field(name="Start Date", value=new_season.start_date.strftime("%Y-%m-%d"), inline=True)
-            embed.add_field(name="Duration", value=f"{duration} days", inline=True)
-            embed.add_field(name="Status", value="Active", inline=True)
-            
-            await interaction.response.send_message(embed=embed)
-            
+                
+                await interaction.followup.send(
+                    f"✅ Новый сезон '{name}' создан и активирован!",
+                    ephemeral=True
+                )
+                
         except Exception as e:
-            logger.error(f"Error creating new season: {e}")
-            await interaction.response.send_message(
-                "❌ An error occurred while creating the new season.",
+            await interaction.followup.send(
+                f"Ошибка при создании сезона: {str(e)}",
                 ephemeral=True
             )
-    
-    async def get_current_season(self, session) -> Optional[Season]:
-        """Get current active season"""
-        result = await session.execute(
-            "SELECT * FROM seasons WHERE is_active = true ORDER BY start_date DESC LIMIT 1"
-        )
-        return result.fetchone()
 
-class Admin(commands.Cog):
-    """Cog for administrative functions"""
-    
-    def __init__(self, bot):
-        self.bot = bot
-    
-    @app_commands.command(name="admin", description="Access admin settings")
-    @app_commands.default_permissions(administrator=True)
-    async def admin_settings(self, interaction: discord.Interaction):
-        """Admin settings command"""
-        # Check if user has admin permissions
+    @app_commands.command(name="guild_info", description="Информация о настройках сервера")
+    async def guild_info(self, interaction: discord.Interaction):
+        """Информация о настройках сервера"""
+        await interaction.response.defer()
+        
+        try:
+            session = await self.db.get_session()
+            async with session as session:
+                settings = await session.get(PenaltySettings, interaction.guild_id)
+                
+                if not settings:
+                    await interaction.followup.send(
+                        "Настройки сервера не найдены. Используйте `/settings` для настройки.",
+                        ephemeral=True
+                    )
+                    return
+                
+                # Get guild statistics
+                from models.match import Match
+                from models.player import Player
+                
+                total_matches = await session.execute(
+                    "SELECT COUNT(*) FROM matches WHERE guild_id = :guild_id",
+                    {"guild_id": interaction.guild_id}
+                )
+                total_matches = total_matches.scalar()
+                
+                active_matches = await session.execute(
+                    "SELECT COUNT(*) FROM matches WHERE guild_id = :guild_id AND status != 'complete'",
+                    {"guild_id": interaction.guild_id}
+                )
+                active_matches = active_matches.scalar()
+                
+                total_players = await session.execute(
+                    "SELECT COUNT(DISTINCT p.id) FROM players p JOIN matches m ON p.id IN (m.player1_id, m.player2_id) WHERE m.guild_id = :guild_id",
+                    {"guild_id": interaction.guild_id}
+                )
+                total_players = total_players.scalar()
+                
+                # Create info embed
+                embed = discord.Embed(
+                    title="ℹ️ Информация о сервере",
+                    color=discord.Color.blue()
+                )
+                
+                embed.add_field(
+                    name="📊 Статистика",
+                    value=f"""
+                    Всего матчей: {total_matches}
+                    Активных матчей: {active_matches}
+                    Участников: {total_players}
+                    """,
+                    inline=False
+                )
+                
+                embed.add_field(
+                    name="⚙️ Настройки",
+                    value=f"Штраф за рестарт: {settings.restart_penalty} сек",
+                    inline=True
+                )
+                
+                # Show detailed penalty info
+                penalties = settings.restart_penalties
+                free_restarts = penalties.get("free_restarts", 2)
+                embed.add_field(
+                    name="⚡ Штрафы",
+                    value=f"Бесплатных: {free_restarts}",
+                    inline=True
+                )
+                
+                if settings.match_channel_id:
+                    channel = interaction.guild.get_channel(settings.match_channel_id)
+                    embed.add_field(
+                        name="🎮 Канал матчей",
+                        value=channel.mention if channel else "Не найден",
+                        inline=True
+                    )
+                
+                if settings.voice_category_id:
+                    category = interaction.guild.get_channel(settings.voice_category_id)
+                    embed.add_field(
+                        name="🔊 Категория войсов",
+                        value=f"📁 {category.name}" if category else "Не найдена",
+                        inline=True
+                    )
+                
+                await interaction.followup.send(embed=embed)
+                
+        except Exception as e:
+            await interaction.followup.send(
+                f"Ошибка при получении информации: {str(e)}",
+                ephemeral=True
+            )
+
+    @app_commands.command(name="season_management", description="Управление сезонами")
+    @app_commands.describe(action="Действие с сезоном")
+    async def season_management(
+        self, 
+        interaction: discord.Interaction,
+        action: str
+    ):
+        """Управление сезонами"""
         if not interaction.user.guild_permissions.administrator:
             await interaction.response.send_message(
-                "❌ You need administrator permissions to use this command.",
+                "❌ У вас нет прав администратора для управления сезонами.",
                 ephemeral=True
             )
             return
         
-        # Create admin settings view
-        view = AdminSettingsView()
-        await interaction.response.send_message(
-            "⚙️ Admin Settings - Choose an option:",
-            view=view,
-            ephemeral=True
-        )
-    
-    @app_commands.command(name="settings", description="View current guild settings")
-    async def view_settings(self, interaction: discord.Interaction):
-        """View current settings command"""
+        await interaction.response.defer()
+        
         try:
-            async with self.bot.db_manager.get_session() as session:
-                # Get penalty settings
-                penalty_settings = await session.get(PenaltySettings, interaction.guild.id)
-                
-                # Get current season
-                current_season = await self.get_current_season(session)
-                
-                # Create settings display embed
-                embed = discord.Embed(
-                    title="⚙️ Guild Settings",
-                    description=f"Current settings for {interaction.guild.name}",
-                    color=discord.Color.blue()
+            session = await self.db.get_session()
+            async with session as session:
+                # Get current active season
+                current_season = await session.execute(
+                    "SELECT * FROM seasons WHERE is_active = true ORDER BY start_date DESC LIMIT 1"
                 )
+                current_season = current_season.scalar_one_or_none()
                 
-                if penalty_settings:
+                if not current_season:
+                    await interaction.followup.send(
+                        "❌ Нет активного сезона для управления.",
+                        ephemeral=True
+                    )
+                    return
+                
+                action_lower = action.lower()
+                
+                if action_lower == "block_matches":
+                    # Block new matches
+                    current_season.block_new_matches()
+                    await session.commit()
+                    
+                    embed = discord.Embed(
+                        title="🚫 Создание матчей заблокировано",
+                        description=f"Сезон: {current_season.name}",
+                        color=discord.Color.red()
+                    )
+                    
                     embed.add_field(
-                        name="Restart Penalty",
-                        value=f"{penalty_settings.restart_penalty_seconds} seconds",
+                        name="Статус",
+                        value="Новые матчи заблокированы",
                         inline=True
                     )
+                    
                     embed.add_field(
-                        name="Max Restarts Before Penalty",
-                        value=penalty_settings.max_restarts_before_penalty,
+                        name="Причина",
+                        value="Администратор заблокировал создание матчей",
                         inline=True
                     )
+                    
+                    await interaction.followup.send(embed=embed)
+                    
+                elif action_lower == "unblock_matches":
+                    # Unblock new matches
+                    current_season.new_matches_blocked = False
+                    await session.commit()
+                    
+                    embed = discord.Embed(
+                        title="✅ Создание матчей разблокировано",
+                        description=f"Сезон: {current_season.name}",
+                        color=discord.Color.green()
+                    )
+                    
+                    embed.add_field(
+                        name="Статус",
+                        value="Новые матчи разрешены",
+                        inline=True
+                    )
+                    
+                    await interaction.followup.send(embed=embed)
+                    
+                elif action_lower == "mark_ending":
+                    # Mark season as ending
+                    current_season.mark_as_ending()
+                    await session.commit()
+                    
+                    embed = discord.Embed(
+                        title="⚠️ Сезон помечен как завершающийся",
+                        description=f"Сезон: {current_season.name}",
+                        color=discord.Color.orange()
+                    )
+                    
+                    embed.add_field(
+                        name="Статус",
+                        value="Сезон завершается",
+                        inline=True
+                    )
+                    
+                    embed.add_field(
+                        name="Действия",
+                        value="• Новые матчи заблокированы\n• Рейтинг заблокирован\n• Игроки получат уведомления",
+                        inline=False
+                    )
+                    
+                    await interaction.followup.send(embed=embed)
+                    
+                elif action_lower == "force_end":
+                    # Force end season
+                    current_season.end_season()
+                    await session.commit()
+                    
+                    embed = discord.Embed(
+                        title="🏁 Сезон принудительно завершен",
+                        description=f"Сезон: {current_season.name}",
+                        color=discord.Color.red()
+                    )
+                    
+                    embed.add_field(
+                        name="Статус",
+                        value="Сезон завершен",
+                        inline=True
+                    )
+                    
+                    embed.add_field(
+                        name="Внимание",
+                        value="Все активные матчи будут аннулированы!",
+                        inline=False
+                    )
+                    
+                    await interaction.followup.send(embed=embed)
+                    
+                elif action_lower == "status":
+                    # Show detailed season status
+                    embed = discord.Embed(
+                        title=f"📊 Статус сезона: {current_season.name}",
+                        description="Детальная информация о сезоне",
+                        color=discord.Color.blue()
+                    )
+                    
+                    embed.add_field(
+                        name="Основная информация",
+                        value=f"**Название**: {current_season.name}\n**Начало**: {current_season.start_date.strftime('%d.%m.%Y %H:%M')}\n**Конец**: {current_season.end_date.strftime('%d.%m.%Y %H:%M')}",
+                        inline=False
+                    )
+                    
+                    embed.add_field(
+                        name="Статус",
+                        value=f"**Активен**: {'Да' if current_season.is_active else 'Нет'}\n**Завершается**: {'Да' if current_season.is_ending else 'Нет'}\n**Рейтинг заблокирован**: {'Да' if current_season.is_rating_locked else 'Нет'}",
+                        inline=True
+                    )
+                    
+                    embed.add_field(
+                        name="Блокировки",
+                        value=f"**Матчи заблокированы**: {'Да' if current_season.new_matches_blocked else 'Нет'}\n**Расчет рейтинга заблокирован**: {'Да' if current_season.rating_calculation_locked else 'Нет'}",
+                        inline=True
+                    )
+                    
+                    embed.add_field(
+                        name="Уведомления",
+                        value=f"**Предупреждение отправлено**: {'Да' if current_season.season_end_warning_sent else 'Нет'}",
+                        inline=True
+                    )
+                    
+                    # Calculate days until end
+                    days_until_end = (current_season.end_date - datetime.utcnow()).days
+                    embed.add_field(
+                        name="Время до завершения",
+                        value=f"**Дней**: {days_until_end}\n**Статус**: {current_season.get_status_description()}",
+                        inline=True
+                    )
+                    
+                    embed.add_field(
+                        name="Блокировка матчей",
+                        value=f"**Причина**: {current_season.get_blocking_reason()}",
+                        inline=True
+                    )
+                    
+                    await interaction.followup.send(embed=embed)
+                    
                 else:
-                    embed.add_field(
-                        name="Restart Penalty",
-                        value=f"{Config.DEFAULT_RESTART_PENALTY} seconds (default)",
-                        inline=True
+                    await interaction.followup.send(
+                        f"❌ Неизвестное действие: {action}\n\n"
+                        "Доступные действия:\n"
+                        "• `block_matches` - Заблокировать создание матчей\n"
+                        "• `unblock_matches` - Разблокировать создание матчей\n"
+                        "• `mark_ending` - Пометить сезон как завершающийся\n"
+                        "• `force_end` - Принудительно завершить сезон\n"
+                        "• `status` - Показать статус сезона",
+                        ephemeral=True
                     )
-                    embed.add_field(
-                        name="Max Restarts Before Penalty",
-                        value="0 (default)",
-                        inline=True
-                    )
-                
-                if current_season:
-                    embed.add_field(
-                        name="Current Season",
-                        value=current_season.name,
-                        inline=True
-                    )
-                    embed.add_field(
-                        name="Season Start",
-                        value=current_season.start_date.strftime("%Y-%m-%d"),
-                        inline=True
-                    )
-                    embed.add_field(
-                        name="Season Status",
-                        value="Active" if current_season.is_active else "Ended",
-                        inline=True
-                    )
-                else:
-                    embed.add_field(
-                        name="Current Season",
-                        value="No active season",
-                        inline=True
-                    )
-                
-                await interaction.response.send_message(embed=embed)
-                
+                    
         except Exception as e:
-            logger.error(f"Error viewing settings: {e}")
-            await interaction.response.send_message(
-                "❌ An error occurred while fetching settings.",
+            await interaction.followup.send(
+                f"❌ Ошибка при управлении сезоном: {str(e)}",
                 ephemeral=True
             )
-    
-    @app_commands.command(name="stats", description="View bot statistics")
-    async def view_stats(self, interaction: discord.Interaction):
-        """View bot statistics command"""
-        try:
-            async with self.bot.db_manager.get_session() as session:
-                # Get basic statistics
-                stats = await self.get_guild_stats(session, interaction.guild.id)
-                
-                embed = discord.Embed(
-                    title="📊 Bot Statistics",
-                    description=f"Statistics for {interaction.guild.name}",
-                    color=discord.Color.green()
-                )
-                
-                embed.add_field(name="Total Players", value=stats['total_players'], inline=True)
-                embed.add_field(name="Total Matches", value=stats['total_matches'], inline=True)
-                embed.add_field(name="Active Matches", value=stats['active_matches'], inline=True)
-                embed.add_field(name="Completed Matches", value=stats['completed_matches'], inline=True)
-                embed.add_field(name="Current Season", value=stats['current_season'], inline=True)
-                embed.add_field(name="Total Games", value=stats['total_games'], inline=True)
-                
-                await interaction.response.send_message(embed=embed)
-                
-        except Exception as e:
-            logger.error(f"Error viewing stats: {e}")
-            await interaction.response.send_message(
-                "❌ An error occurred while fetching statistics.",
-                ephemeral=True
-            )
-    
-    async def get_guild_stats(self, session, guild_id: int) -> dict:
-        """Get statistics for a guild"""
-        try:
-            # Get player count
-            player_result = await session.execute(
-                "SELECT COUNT(*) FROM players WHERE discord_id IN (SELECT DISTINCT player1_id FROM matches WHERE discord_guild_id = :guild_id UNION SELECT DISTINCT player2_id FROM matches WHERE discord_guild_id = :guild_id)",
-                {"guild_id": guild_id}
-            )
-            total_players = player_result.fetchone()[0]
-            
-            # Get match counts
-            match_result = await session.execute(
-                "SELECT COUNT(*) as total, SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END) as active, SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed FROM matches WHERE discord_guild_id = :guild_id",
-                {"guild_id": guild_id}
-            )
-            match_row = match_result.fetchone()
-            total_matches = match_row[0] if match_row[0] else 0
-            active_matches = match_row[1] if match_row[1] else 0
-            completed_matches = match_row[2] if match_row[2] else 0
-            
-            # Get current season
-            season_result = await session.execute(
-                "SELECT name FROM seasons WHERE is_active = true ORDER BY start_date DESC LIMIT 1"
-            )
-            season_row = season_result.fetchone()
-            current_season = season_row[0] if season_row else "None"
-            
-            # Get total games
-            game_result = await session.execute(
-                "SELECT COUNT(*) FROM game_results gr JOIN matches m ON gr.match_id = m.id WHERE m.discord_guild_id = :guild_id",
-                {"guild_id": guild_id}
-            )
-            total_games = game_result.fetchone()[0] if game_result.fetchone() else 0
-            
-            return {
-                'total_players': total_players,
-                'total_matches': total_matches,
-                'active_matches': active_matches,
-                'completed_matches': completed_matches,
-                'current_season': current_season,
-                'total_games': total_games
-            }
-            
-        except Exception as e:
-            logger.error(f"Error getting guild stats: {e}")
-            return {
-                'total_players': 0,
-                'total_matches': 0,
-                'active_matches': 0,
-                'completed_matches': 0,
-                'current_season': "Error",
-                'total_games': 0
-            }
-    
-    async def get_current_season(self, session) -> Optional[Season]:
-        """Get current active season"""
-        result = await session.execute(
-            "SELECT * FROM seasons WHERE is_active = true ORDER BY start_date DESC LIMIT 1"
-        )
-        return result.fetchone()
 
-class AdminSettingsView(View):
-    """View for admin settings options"""
-    
-    def __init__(self):
-        super().__init__(timeout=300)  # 5 minutes timeout
-    
-    @discord.ui.button(label="Penalty Settings", style=discord.ButtonStyle.primary, custom_id="penalty_settings")
-    async def penalty_settings(self, interaction: discord.Interaction, button: Button):
-        """Open penalty settings modal"""
-        modal = AdminSettingsModal("penalty")
-        await interaction.response.send_modal(modal)
-    
-    @discord.ui.button(label="New Season", style=discord.ButtonStyle.success, custom_id="new_season")
-    async def new_season(self, interaction: discord.Interaction, button: Button):
-        """Open new season modal"""
-        modal = AdminSettingsModal("season")
-        await interaction.response.send_modal(modal)
-    
-    @discord.ui.button(label="View Settings", style=discord.ButtonStyle.secondary, custom_id="view_settings")
-    async def view_settings(self, interaction: discord.Interaction, button: Button):
-        """View current settings"""
-        # This would call the view_settings command
-        await interaction.response.send_message(
-            "Use `/settings` to view current settings.",
-            ephemeral=True
-        )
-
-async def setup(bot):
-    """Setup function for the cog"""
+async def setup(bot: commands.Bot):
     await bot.add_cog(Admin(bot))

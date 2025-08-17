@@ -1,406 +1,345 @@
 import discord
 from discord.ext import commands
 from discord import app_commands
-from discord.ui import Button, View, Modal, TextInput
-import asyncio
-import logging
-from typing import Optional, List
-from datetime import datetime, timedelta
-
-from models.match import Match, MatchFormat, MatchStatus, MatchStage
+from discord.ui import Modal, TextInput, View, Button
+from typing import Optional
+from database.database import DatabaseManager
+from locales import LocaleManager
+from models.match import Match, MatchFormat
 from models.player import Player
-from models.game_result import GameResult
 from models.penalty_settings import PenaltySettings
-from locales import get_text
-from config.config import Config
 
-logger = logging.getLogger(__name__)
-
-class MatchCreationModal(Modal, title="Create Match"):
+class MatchCreationModal(Modal, title="Создание матча"):
     """Modal for creating a new match"""
     
-    def __init__(self):
+    def __init__(self, opponent: discord.Member):
         super().__init__()
+        self.opponent = opponent
+        
         self.format_input = TextInput(
-            label="Match Format",
-            placeholder="bo1, bo2, or bo3",
+            label="Формат матча",
+            placeholder="bo1, bo2, или bo3",
+            default="bo1",
             required=True,
+            min_length=3,
             max_length=3
-        )
-        self.opponent_input = TextInput(
-            label="Opponent Discord ID",
-            placeholder="123456789012345678",
-            required=True,
-            max_length=20
         )
         
         self.add_item(self.format_input)
-        self.add_item(self.opponent_input)
-    
-    async def on_submit(self, interaction: discord.Interaction):
-        """Handle modal submission"""
-        try:
-            format_str = self.format_input.value.lower()
-            opponent_id = int(self.opponent_input.value)
-            
-            # Validate format
-            if format_str not in ['bo1', 'bo2', 'bo3']:
-                await interaction.response.send_message(
-                    "❌ Invalid format. Use bo1, bo2, or bo3.",
-                    ephemeral=True
-                )
-                return
-            
-            # Validate opponent
-            opponent = interaction.guild.get_member(opponent_id)
-            if not opponent:
-                await interaction.response.send_message(
-                    "❌ Opponent not found in this server.",
-                    ephemeral=True
-                )
-                return
-            
-            if opponent.id == interaction.user.id:
-                await interaction.response.send_message(
-                    "❌ You cannot create a match with yourself.",
-                    ephemeral=True
-                )
-                return
-            
-            # Create match
-            await self.create_match(interaction, format_str, opponent)
-            
-        except ValueError:
-            await interaction.response.send_message(
-                "❌ Invalid opponent ID. Please enter a valid Discord user ID.",
-                ephemeral=True
-            )
-    
-    async def create_match(self, interaction: discord.Interaction, format_str: str, opponent: discord.Member):
-        """Create a new match"""
-        bot = interaction.client
-        
-        # Get or create players
-        player1 = await bot.db_manager.get_or_create_player(
-            interaction.user.id,
-            interaction.user.name,
-            interaction.user.display_name
-        )
-        player2 = await bot.db_manager.get_or_create_player(
-            opponent.id,
-            opponent.name,
-            opponent.display_name
-        )
-        
-        # Create match
-        match = Match(
-            discord_guild_id=interaction.guild.id,
-            discord_channel_id=interaction.channel.id,
-            player1_id=player1.id,
-            player2_id=player2.id,
-            format=MatchFormat(format_str),
-            status=MatchStatus.WAITING,
-            current_stage=MatchStage.WAITING_READINESS
-        )
-        
-        async with bot.db_manager.get_session() as session:
-            session.add(match)
-            await session.commit()
-            await session.refresh(match)
-        
-        # Create voice channel
-        voice_channel = await interaction.guild.create_voice_channel(
-            name=f"Match-{match.id}",
-            user_limit=2
-        )
-        
-        # Update match with voice channel ID
-        async with bot.db_manager.get_session() as session:
-            match.discord_voice_channel_id = voice_channel.id
-            await session.commit()
-        
-        # Send match creation message
-        embed = discord.Embed(
-            title=get_text("MATCH_CREATION", "title"),
-            description=get_text("MATCH_CREATION", "description"),
-            color=discord.Color.blue()
-        )
-        embed.add_field(
-            name=get_text("MATCH_CREATION", "player1"),
-            value=interaction.user.mention,
-            inline=True
-        )
-        embed.add_field(
-            name=get_text("MATCH_CREATION", "player2"),
-            value=opponent.mention,
-            inline=True
-        )
-        embed.add_field(
-            name=get_text("MATCH_CREATION", "format"),
-            value=get_text("FORMATS", format_str),
-            inline=True
-        )
-        embed.add_field(
-            name=get_text("MATCH_CREATION", "status"),
-            value=get_text("STATUSES", "waiting"),
-            inline=True
-        )
-        embed.add_field(
-            name=get_text("MATCH_CREATION", "created_at"),
-            value=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            inline=True
-        )
-        
-        # Create join buttons
-        view = MatchJoinView(match.id)
-        
-        await interaction.response.send_message(
-            content=get_text("MATCH_CREATION", "voice_channel_created", channel_name=voice_channel.mention),
-            embed=embed,
-            view=view
-        )
 
 class MatchJoinView(View):
-    """View for joining a match"""
+    """View for players to accept or decline match challenges"""
     
-    def __init__(self, match_id: int):
-        super().__init__(timeout=None)
-        self.match_id = match_id
-    
-    @discord.ui.button(label="Join Match", style=discord.ButtonStyle.primary, custom_id="join_match")
-    async def join_match(self, interaction: discord.Interaction, button: Button):
-        """Handle match join button click"""
-        await self.join_match_handler(interaction)
-    
-    async def join_match_handler(self, interaction: discord.Interaction):
-        """Handle joining a match"""
-        bot = interaction.client
+    def __init__(self, challenger: discord.Member, opponent: discord.Member, match_format: str):
+        super().__init__(timeout=300)
+        self.challenger = challenger
+        self.opponent = opponent
+        self.match_format = match_format
+        self.challenger_accepted = False
+        self.opponent_accepted = False
         
-        # Get match
-        async with bot.db_manager.get_session() as session:
-            match = await session.get(Match, self.match_id)
-            if not match:
-                await interaction.response.send_message(
-                    get_text("ERRORS", "match_not_found"),
-                    ephemeral=True
-                )
-                return
-            
-            # Check if user is one of the players
-            if interaction.user.id not in [match.player1.discord_id, match.player2.discord_id]:
-                await interaction.response.send_message(
-                    "❌ You are not a player in this match.",
-                    ephemeral=True
-                )
-                return
-            
-            # Check if already joined
-            if match.status != MatchStatus.WAITING:
-                await interaction.response.send_message(
-                    "❌ This match is no longer accepting players.",
-                    ephemeral=True
-                )
-                return
-        
-        # Update match status if both players joined
-        await self.check_match_readiness(interaction, match)
-    
-    async def check_match_readiness(self, interaction: discord.Interaction, match: Match):
-        """Check if both players are ready to proceed"""
-        # Check if both players are in voice channel
-        voice_channel = interaction.guild.get_channel(match.discord_voice_channel_id)
-        if not voice_channel:
+        # Add accept/decline buttons
+        self.add_item(Button(
+            label="✅ Принять вызов",
+            custom_id="accept_challenge",
+            style=discord.ButtonStyle.success
+        ))
+        self.add_item(Button(
+            label="❌ Отклонить",
+            custom_id="decline_challenge",
+            style=discord.ButtonStyle.danger
+        ))
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        """Check if user can interact with this view"""
+        if interaction.user.id not in [self.challenger.id, self.opponent.id]:
             await interaction.response.send_message(
-                "❌ Voice channel not found.",
-                ephemeral=True
-                )
-            return
-        
-        # Get player members
-        player1_member = interaction.guild.get_member(match.player1.discord_id)
-        player2_member = interaction.guild.get_channel(match.player2.discord_id)
-        
-        if not player1_member or not player2_member:
-            await interaction.response.send_message(
-                "❌ One or both players not found in server.",
+                "Вы не можете взаимодействовать с этим вызовом.",
                 ephemeral=True
             )
-            return
-        
-        # Check if both are in voice channel
-        if (player1_member.voice is None or 
-            player1_member.voice.channel != voice_channel or
-            player2_member.voice is None or 
-            player2_member.voice.channel != voice_channel):
+            return False
             
+        custom_id = interaction.data.get("custom_id", "")
+        
+        if custom_id == "accept_challenge":
+            if interaction.user.id == self.challenger.id:
+                self.challenger_accepted = True
+                await interaction.response.send_message(
+                    "Вы подтвердили готовность к матчу!",
+                    ephemeral=True
+                )
+            elif interaction.user.id == self.opponent.id:
+                self.opponent_accepted = True
+                await interaction.response.send_message(
+                    "Вы приняли вызов!",
+                    ephemeral=True
+                )
+                
+            # Check if both players accepted
+            if self.challenger_accepted and self.opponent_accepted:
+                await self.proceed_to_match(interaction)
+                
+        elif custom_id == "decline_challenge":
+            if interaction.user.id == self.opponent.id:
+                await interaction.response.send_message(
+                    "Вы отклонили вызов.",
+                    ephemeral=True
+                )
+                await interaction.message.edit(
+                    content=f"❌ {self.opponent.mention} отклонил вызов от {self.challenger.mention}",
+                    view=None
+                )
+            else:
+                await interaction.response.send_message(
+                    "Только оппонент может отклонить вызов.",
+                    ephemeral=True
+                )
+                
+        return True
+        
+    async def proceed_to_match(self, interaction: discord.Interaction):
+        """Proceed to match creation after both players accept"""
+        try:
+            # Create match in database
+            db_manager = DatabaseManager()
+        session = await db_manager.get_session()
+        async with session as session:
+                # Get or create players
+                player1 = await self.get_or_create_player(session, self.challenger.id, self.challenger.display_name)
+                player2 = await self.get_or_create_player(session, self.opponent.id, self.opponent.display_name)
+                
+                # Create match
+                match = Match(
+                    player1_id=player1.id,
+                    player2_id=player2.id,
+                    format=MatchFormat(self.match_format.lower()),
+                    guild_id=interaction.guild_id
+                )
+                
+                session.add(match)
+                await session.commit()
+                
+                # Create match thread
+                thread = await interaction.channel.create_thread(
+                    name=f"Матч {self.challenger.display_name} vs {self.opponent.display_name}",
+                    type=discord.ChannelType.public_thread
+                )
+                
+                # Update match with thread ID
+                match.thread_id = thread.id
+                await session.commit()
+                
+                # Send match confirmation
+                embed = discord.Embed(
+                    title="🎮 Матч создан!",
+                    description=f"**{self.challenger.mention}** vs **{self.opponent.mention}**",
+                    color=discord.Color.green()
+                )
+                
+                embed.add_field(
+                    name="Формат",
+                    value=self.match_format.upper(),
+                    inline=True
+                )
+                
+                embed.add_field(
+                    name="Статус",
+                    value="Ожидание готовности игроков",
+                    inline=True
+                )
+                
+                await thread.send(
+                    f"🎮 **Матч создан!**\n\n"
+                    f"**Игрок 1**: {self.challenger.mention}\n"
+                    f"**Игрок 2**: {self.opponent.mention}\n"
+                    f"**Формат**: {self.match_format.upper()}\n\n"
+                    f"Оба игрока должны подтвердить готовность к матчу.",
+                    embed=embed
+                )
+                
+                await interaction.message.edit(
+                    content=f"✅ Матч создан! Перейдите в {thread.mention}",
+                    view=None
+                )
+                
+        except Exception as e:
             await interaction.response.send_message(
-                get_text("MATCH_CREATION", "waiting_players"),
+                f"❌ Ошибка при создании матча: {str(e)}",
                 ephemeral=True
             )
-            return
-        
-        # Both players are in voice channel, proceed to readiness confirmation
-        await self.start_readiness_confirmation(interaction, match)
     
-    async def start_readiness_confirmation(self, interaction: discord.Interaction, match: Match):
-        """Start the readiness confirmation process"""
-        # Update match stage
-        async with interaction.client.db_manager.get_session() as session:
-            match.current_stage = MatchStage.WAITING_READINESS
+    async def get_or_create_player(self, session, discord_id: int, username: str) -> Player:
+        """Get existing player or create new one"""
+        player = await session.execute(
+            "SELECT * FROM players WHERE discord_id = :discord_id",
+            {"discord_id": discord_id}
+        )
+        player = player.scalar_one_or_none()
+        
+        if not player:
+            player = Player(discord_id=discord_id, username=username)
+            session.add(player)
             await session.commit()
+            await session.refresh(player)
         
-        # Send readiness confirmation message
-        embed = discord.Embed(
-            title="⏳ Match Ready to Begin",
-            description="Both players are in the voice channel. Please confirm your readiness.",
-            color=discord.Color.yellow()
-        )
-        
-        view = ReadinessConfirmationView(match.id)
-        
-        await interaction.response.send_message(
-            content=get_text("MATCH_CREATION", "both_players_joined"),
-            embed=embed,
-            view=view
-        )
-
-class ReadinessConfirmationView(View):
-    """View for confirming readiness"""
-    
-    def __init__(self, match_id: int):
-        super().__init__(timeout=None)
-        self.match_id = match_id
-    
-    @discord.ui.button(label="I'm Ready", style=discord.ButtonStyle.success, custom_id="ready")
-    async def confirm_readiness(self, interaction: discord.Interaction, button: Button):
-        """Handle readiness confirmation"""
-        await self.confirm_readiness_handler(interaction)
-    
-    async def confirm_readiness_handler(self, interaction: discord.Interaction):
-        """Handle readiness confirmation"""
-        bot = interaction.client
-        
-        # Get match
-        async with bot.db_manager.get_session() as session:
-            match = await session.get(Match, self.match_id)
-            if not match:
-                await interaction.response.send_message(
-                    get_text("ERRORS", "match_not_found"),
-                    ephemeral=True
-                )
-                return
-            
-            # Check if user is one of the players
-            if interaction.user.id not in [match.player1.discord_id, match.player2.discord_id]:
-                await interaction.response.send_message(
-                    "❌ You are not a player in this match.",
-                    ephemeral=True
-                )
-                return
-        
-        # Store readiness confirmation
-        # This would typically be stored in a more sophisticated way
-        # For now, we'll proceed to the next stage
-        
-        await interaction.response.send_message(
-            get_text("SUCCESS", "readiness_confirmed"),
-            ephemeral=True
-        )
-        
-        # Move to draft verification stage
-        await self.proceed_to_draft_verification(interaction, match)
-    
-    async def proceed_to_draft_verification(self, interaction: discord.Interaction, match: Match):
-        """Proceed to draft verification stage"""
-        # Update match stage
-        async with interaction.client.db_manager.get_session() as session:
-            match.current_stage = MatchStage.WAITING_DRAFT
-            await session.commit()
-        
-        # Send draft verification message
-        embed = discord.Embed(
-            title=get_text("DRAFT_VERIFICATION", "title"),
-            description=get_text("DRAFT_VERIFICATION", "description"),
-            color=discord.Color.blue()
-        )
-        
-        view = DraftVerificationView(match.id)
-        
-        await interaction.channel.send(
-            content=get_text("DRAFT_VERIFICATION", "waiting_both"),
-            embed=embed,
-            view=view
-        )
-
-class DraftVerificationView(View):
-    """View for draft verification"""
-    
-    def __init__(self, match_id: int):
-        super().__init__(timeout=None)
-        self.match_id = match_id
-    
-    @discord.ui.button(label="Submit Draft", style=discord.ButtonStyle.primary, custom_id="submit_draft")
-    async def submit_draft(self, interaction: discord.Interaction, button: Button):
-        """Handle draft submission"""
-        await self.submit_draft_handler(interaction)
-    
-    async def submit_draft_handler(self, interaction: discord.Interaction):
-        """Handle draft submission"""
-        # Open draft submission modal
-        modal = DraftSubmissionModal(self.match_id)
-        await interaction.response.send_modal(modal)
-
-class DraftSubmissionModal(Modal, title="Submit Draft Link"):
-    """Modal for submitting draft link"""
-    
-    def __init__(self, match_id: int):
-        super().__init__()
-        self.match_id = match_id
-        
-        self.draft_link = TextInput(
-            label="Draft Link",
-            placeholder="https://example.com/draft/...",
-            required=True,
-            max_length=500
-        )
-        
-        self.add_item(self.draft_link)
-    
-    async def on_submit(self, interaction: discord.Interaction):
-        """Handle draft submission"""
-        # This would implement the draft verification logic
-        # For now, we'll just acknowledge the submission
-        
-        await interaction.response.send_message(
-            "✅ Draft link submitted. Waiting for opponent...",
-            ephemeral=True
-        )
+        return player
 
 class MatchManagement(commands.Cog):
-    """Cog for managing matches"""
+    """Cog for managing match creation and management"""
     
-    def __init__(self, bot):
+    def __init__(self, bot: commands.Bot):
         self.bot = bot
-    
-    @app_commands.command(name="match", description="Create a new match")
-    async def create_match(self, interaction: discord.Interaction):
-        """Create a new match command"""
-        # Check if user is already in a match
-        # This would check the database for active matches
+        self.db = DatabaseManager()
         
-        # Open match creation modal
-        modal = MatchCreationModal()
-        await interaction.response.send_modal(modal)
-    
-    @app_commands.command(name="matches", description="View your active matches")
-    async def view_matches(self, interaction: discord.Interaction):
-        """View active matches command"""
-        # This would query the database for active matches
-        await interaction.response.send_message(
-            "📋 Active matches functionality coming soon!",
-            ephemeral=True
-        )
+    @app_commands.command(name="challenge", description="Вызвать игрока на матч")
+    @app_commands.describe(
+        opponent="Игрок для вызова",
+        format="Формат матча (Bo1, Bo2, Bo3)"
+    )
+    async def challenge(
+        self, 
+        interaction: discord.Interaction, 
+        opponent: discord.Member,
+        format: str = "Bo1"
+    ):
+        """Вызвать игрока на матч"""
+        await interaction.response.defer()
+        
+        try:
+            # Check if user is challenging themselves
+            if interaction.user.id == opponent.id:
+                await interaction.followup.send(
+                    "❌ Вы не можете вызвать сами себя на матч.",
+                    ephemeral=True
+                )
+                return
+            
+            # Check if opponent is a bot
+            if opponent.bot:
+                await interaction.followup.send(
+                    "❌ Вы не можете вызвать бота на матч.",
+                    ephemeral=True
+                )
+                return
+            
+            # Check season status and blocking
+            season_manager = self.bot.get_cog('SeasonManager')
+            if season_manager:
+                can_create, reason = await season_manager.can_create_new_match(interaction.guild_id)
+                if not can_create:
+                    embed = discord.Embed(
+                        title="🚫 Создание матчей заблокировано",
+                        description=f"**Причина**: {reason}",
+                        color=discord.Color.red()
+                    )
+                    
+                    # Get season status for more details
+                    season = await season_manager.get_season_status(interaction.guild_id)
+                    if season:
+                        embed.add_field(
+                            name="Информация о сезоне",
+                            value=f"**Сезон**: {season.name}\n**Статус**: {season.get_status_description()}",
+                            inline=False
+                        )
+                        
+                        if season.is_ending_soon:
+                            embed.add_field(
+                                name="⚠️ Важно",
+                                value="Завершите все активные матчи до окончания сезона!",
+                                inline=False
+                            )
+                    
+                    await interaction.followup.send(embed=embed, ephemeral=True)
+                    return
+            
+            # Check if matches are restricted to specific channel
+            session = await self.db.get_session()
+        async with session as session:
+                penalty_settings = await session.execute(
+                    "SELECT match_channel_id FROM penalty_settings WHERE guild_id = :guild_id",
+                    {"guild_id": interaction.guild_id}
+                )
+                penalty_settings = penalty_settings.scalar_one_or_none()
+                
+                if penalty_settings and penalty_settings.match_channel_id:
+                    if interaction.channel_id != penalty_settings.match_channel_id:
+                        await interaction.followup.send(
+                            f"❌ Матчи можно создавать только в канале <#{penalty_settings.match_channel_id}>",
+                            ephemeral=True
+                        )
+                        return
+            
+            # Validate match format
+            if format.lower() not in ['bo1', 'bo2', 'bo3']:
+                await interaction.followup.send(
+                    "Неверный формат матча. Используйте: bo1, bo2, или bo3",
+                    ephemeral=True
+                )
+                return
+            
+            # Check if there's already an active match between these players
+            session = await self.db.get_session()
+        async with session as session:
+                active_match = await session.execute(
+                    """
+                    SELECT m.* FROM matches m 
+                    JOIN players p1 ON m.player1_id = p1.id 
+                    JOIN players p2 ON m.player2_id = p2.id 
+                    WHERE m.guild_id = :guild_id 
+                    AND m.status NOT IN ('complete', 'annulled')
+                    AND (
+                        (p1.discord_id = :user_id AND p2.discord_id = :opponent_id)
+                        OR (p1.discord_id = :opponent_id AND p2.discord_id = :user_id)
+                    )
+                    """,
+                    {
+                        "guild_id": interaction.guild_id,
+                        "user_id": interaction.user.id,
+                        "opponent_id": opponent.id
+                    }
+                )
+                active_match = active_match.scalar_one_or_none()
+                
+                if active_match:
+                    await interaction.followup.send(
+                        f"❌ У вас уже есть активный матч с {opponent.mention}.",
+                        ephemeral=True
+                    )
+                    return
+            
+            # Create challenge view
+            view = MatchJoinView(interaction.user, opponent, format)
+            
+            embed = discord.Embed(
+                title="⚔️ Вызов на матч!",
+                description=f"{interaction.user.mention} вызывает {opponent.mention} на матч!",
+                color=discord.Color.blue()
+            )
+            
+            embed.add_field(
+                name="Формат",
+                value=format.upper(),
+                inline=True
+            )
+            
+            embed.add_field(
+                name="Статус",
+                value="Ожидание ответа",
+                inline=True
+            )
+            
+            await interaction.followup.send(
+                f"⚔️ **{interaction.user.mention}** вызывает **{opponent.mention}** на матч!",
+                embed=embed,
+                view=view
+            )
+            
+        except Exception as e:
+            await interaction.followup.send(
+                f"❌ Ошибка при создании вызова: {str(e)}",
+                ephemeral=True
+            )
 
-async def setup(bot):
+async def setup(bot: commands.Bot):
     """Setup function for the cog"""
     await bot.add_cog(MatchManagement(bot))
