@@ -11,6 +11,7 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from config.config import Config
 from database.database import DatabaseManager
 from services.season_manager import SeasonManager
+from services.security_service import SecurityService
 
 # Configure logging
 logging.basicConfig(
@@ -41,6 +42,7 @@ class RatingBot(commands.Bot):
         
         self.db_manager = None
         self.season_manager = None
+        self.security_service = None
         self.locale = Config.DEFAULT_LOCALE
         
     async def setup_hook(self):
@@ -64,6 +66,7 @@ class RatingBot(commands.Bot):
         await self.load_extension("cogs.draft_verification")
         await self.load_extension("cogs.referee_system")
         await self.load_extension("cogs.referee_management")
+        await self.load_extension("cogs.achievements")
         
         logger.info("All cogs loaded successfully")
         
@@ -87,13 +90,20 @@ class RatingBot(commands.Bot):
             )
         )
         
-        # Start season manager service
+        # Start background services
         try:
+            # Start season manager service
             self.season_manager = SeasonManager(self)
             asyncio.create_task(self.season_manager.start_monitoring())
             logger.info("Season manager service started")
+            
+            # Start security service
+            self.security_service = SecurityService(self)
+            asyncio.create_task(self.security_service.start_monitoring())
+            logger.info("Security service started")
+            
         except Exception as e:
-            logger.error(f"Failed to start season manager: {e}")
+            logger.error(f"Failed to start background services: {e}")
     
     async def on_guild_join(self, guild):
         """Called when bot joins a new guild"""
@@ -121,6 +131,22 @@ class RatingBot(commands.Bot):
         else:
             logger.error(f"Unhandled command error: {error}")
             await ctx.send("❌ An unexpected error occurred. Please try again later.")
+    
+    async def on_member_join(self, member):
+        """Called when a member joins a guild"""
+        logger.info(f"Member {member.display_name} joined guild {member.guild.name}")
+        
+        # Check if member should be restricted due to security concerns
+        if self.security_service:
+            await self.security_service.check_new_member_security(member)
+    
+    async def on_member_remove(self, member):
+        """Called when a member leaves a guild"""
+        logger.info(f"Member {member.display_name} left guild {member.guild.name}")
+        
+        # Log member departure for security analysis
+        if self.security_service:
+            await self.security_service.log_member_departure(member)
 
 async def main():
     """Main function to run the bot"""
