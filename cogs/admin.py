@@ -23,6 +23,145 @@ class GuildSettingsModal(Modal, title="Настройки сервера"):
         
         self.add_item(self.restart_penalty)
 
+class DetailedPenaltyModal(Modal, title="Детальная настройка штрафов за рестарты"):
+    def __init__(self, current_settings: Optional[PenaltySettings] = None):
+        super().__init__()
+        self.current_settings = current_settings
+        
+        # Get current values or defaults
+        penalties = current_settings.restart_penalties if current_settings else {
+            "free_restarts": 2,
+            "penalty_tiers": {"3": 5, "4": 15, "5": 999}
+        }
+        
+        self.free_restarts = TextInput(
+            label="Количество бесплатных рестартов",
+            placeholder="2",
+            default=str(penalties.get("free_restarts", 2)),
+            required=True,
+            min_length=1,
+            max_length=2
+        )
+        
+        self.tier3_penalty = TextInput(
+            label="Штраф за 3-й рестарт (секунды)",
+            placeholder="5",
+            default=str(penalties.get("penalty_tiers", {}).get("3", 5)),
+            required=True,
+            min_length=1,
+            max_length=3
+        )
+        
+        self.tier4_penalty = TextInput(
+            label="Штраф за 4-й рестарт (секунды)",
+            placeholder="15",
+            default=str(penalties.get("penalty_tiers", {}).get("4", 15)),
+            required=True,
+            min_length=1,
+            max_length=3
+        )
+        
+        self.tier5_penalty = TextInput(
+            label="Штраф за 5-й рестарт (секунды)",
+            placeholder="999",
+            default=str(penalties.get("penalty_tiers", {}).get("5", 999)),
+            required=True,
+            min_length=1,
+            max_length=3
+        )
+        
+        self.add_item(self.free_restarts)
+        self.add_item(self.tier3_penalty)
+        self.add_item(self.tier4_penalty)
+        self.add_item(self.tier5_penalty)
+    
+    async def on_submit(self, interaction: discord.Interaction):
+        """Handle modal submission"""
+        try:
+            # Validate input
+            free_restarts = int(self.free_restarts.value)
+            tier3_penalty = int(self.tier3_penalty.value)
+            tier4_penalty = int(self.tier4_penalty.value)
+            tier5_penalty = int(self.tier5_penalty.value)
+            
+            if free_restarts < 0 or tier3_penalty < 0 or tier4_penalty < 0 or tier5_penalty < 0:
+                await interaction.response.send_message(
+                    "❌ Штрафы не могут быть отрицательными.",
+                    ephemeral=True
+                )
+                return
+            
+            # Update penalty settings
+            async with DatabaseManager().get_session() as session:
+                settings = await session.get(PenaltySettings, interaction.guild_id)
+                
+                if not settings:
+                    await interaction.response.send_message(
+                        "❌ Настройки сервера не найдены.",
+                        ephemeral=True
+                    )
+                    return
+                
+                # Update detailed penalties
+                settings.restart_penalties = {
+                    "free_restarts": free_restarts,
+                    "penalty_tiers": {
+                        "3": tier3_penalty,
+                        "4": tier4_penalty,
+                        "5": tier5_penalty
+                    }
+                }
+                
+                await session.commit()
+                
+                # Create confirmation embed
+                embed = discord.Embed(
+                    title="✅ Штрафы за рестарты обновлены",
+                    description="Новая конфигурация штрафов",
+                    color=discord.Color.green()
+                )
+                
+                embed.add_field(
+                    name="🆓 Бесплатные рестарты",
+                    value=f"Первые {free_restarts} рестарта бесплатны",
+                    inline=False
+                )
+                
+                embed.add_field(
+                    name="💰 Штрафные рестарты",
+                    value=f"""
+                    3-й рестарт: +{tier3_penalty} секунд
+                    4-й рестарт: +{tier4_penalty} секунд
+                    5-й рестарт: +{tier5_penalty} секунд
+                    """,
+                    inline=False
+                )
+                
+                # Add examples
+                examples = []
+                for i in range(1, 6):
+                    total_penalty = settings.calculate_total_penalty(i)
+                    examples.append(f"{i} рестарт: +{total_penalty}с")
+                
+                embed.add_field(
+                    name="📊 Примеры расчета",
+                    value="\n".join(examples),
+                    inline=False
+                )
+                
+                await interaction.response.send_message(embed=embed, ephemeral=True)
+                
+        except ValueError:
+            await interaction.response.send_message(
+                "❌ Пожалуйста, введите корректные числовые значения.",
+                ephemeral=True
+            )
+        except Exception as e:
+            await interaction.response.send_message(
+                f"❌ Ошибка при обновлении штрафов: {str(e)}",
+                ephemeral=True
+            )
+
 class ChannelSelectionView(View):
     def __init__(self, guild: discord.Guild, settings_type: str):
         super().__init__(timeout=300)
@@ -65,7 +204,7 @@ class Admin(commands.Cog):
         
     @app_commands.command(name="settings", description="Настройки сервера")
     @app_commands.describe(
-        penalty="Штраф за рестарт в секундах",
+        penalty="Штраф за рестарт в секундах (упрощенная настройка)",
         match_channel="Канал для создания матчей",
         leaderboard_channel="Канал для лидерборда",
         audit_channel="Канал для аудита",
@@ -123,8 +262,23 @@ class Admin(commands.Cog):
                 )
                 
                 embed.add_field(
-                    name="Штраф за рестарт",
+                    name="Штраф за рестарт (упрощенный)",
                     value=f"{settings.restart_penalty} секунд",
+                    inline=True
+                )
+                
+                # Show detailed penalty info
+                penalties = settings.restart_penalties
+                free_restarts = penalties.get("free_restarts", 2)
+                penalty_tiers = penalties.get("penalty_tiers", {})
+                
+                detailed_penalty_text = f"Бесплатных: {free_restarts}\n"
+                for tier, penalty in sorted(penalty_tiers.items(), key=lambda x: int(x[0])):
+                    detailed_penalty_text += f"{tier}-й: +{penalty}с\n"
+                
+                embed.add_field(
+                    name="Детальные штрафы",
+                    value=detailed_penalty_text.strip(),
                     inline=True
                 )
                 
@@ -165,6 +319,109 @@ class Admin(commands.Cog):
         except Exception as e:
             await interaction.followup.send(
                 f"Ошибка при обновлении настроек: {str(e)}",
+                ephemeral=True
+            )
+
+    @app_commands.command(name="penalties", description="Детальная настройка штрафов за рестарты")
+    async def configure_penalties(self, interaction: discord.Interaction):
+        """Детальная настройка штрафов за рестарты"""
+        if not interaction.user.guild_permissions.administrator:
+            await interaction.response.send_message(
+                "У вас нет прав администратора для изменения настроек.",
+                ephemeral=True
+            )
+            return
+            
+        try:
+            # Get current settings
+            async with self.db.get_session() as session:
+                settings = await session.get(PenaltySettings, interaction.guild_id)
+                
+                if not settings:
+                    await interaction.response.send_message(
+                        "Сначала настройте базовые параметры сервера командой `/settings`",
+                        ephemeral=True
+                    )
+                    return
+                
+                # Open detailed penalty modal
+                modal = DetailedPenaltyModal(settings)
+                await interaction.response.send_modal(modal)
+                
+        except Exception as e:
+            await interaction.response.send_message(
+                f"Ошибка при открытии настроек штрафов: {str(e)}",
+                ephemeral=True
+            )
+
+    @app_commands.command(name="penalty_info", description="Информация о текущих штрафах за рестарты")
+    async def penalty_info(self, interaction: discord.Interaction):
+        """Показать информацию о текущих штрафах за рестарты"""
+        await interaction.response.defer()
+        
+        try:
+            async with self.db.get_session() as session:
+                settings = await session.get(PenaltySettings, interaction.guild_id)
+                
+                if not settings:
+                    await interaction.followup.send(
+                        "Настройки сервера не найдены. Используйте `/settings` для настройки.",
+                        ephemeral=True
+                    )
+                    return
+                
+                # Create penalty info embed
+                embed = discord.Embed(
+                    title="⚡ Штрафы за рестарты",
+                    description="Текущая конфигурация штрафов",
+                    color=discord.Color.orange()
+                )
+                
+                penalties = settings.restart_penalties
+                free_restarts = penalties.get("free_restarts", 2)
+                penalty_tiers = penalties.get("penalty_tiers", {})
+                
+                embed.add_field(
+                    name="🆓 Бесплатные рестарты",
+                    value=f"Первые {free_restarts} рестарта бесплатны",
+                    inline=False
+                )
+                
+                if penalty_tiers:
+                    penalty_text = ""
+                    for tier, penalty in sorted(penalty_tiers.items(), key=lambda x: int(x[0])):
+                        penalty_text += f"**{tier}-й рестарт**: +{penalty} секунд\n"
+                    embed.add_field(
+                        name="💰 Штрафные рестарты",
+                        value=penalty_text,
+                        inline=False
+                    )
+                
+                # Add examples
+                examples = []
+                for i in range(1, 6):
+                    total_penalty = settings.calculate_total_penalty(i)
+                    examples.append(f"{i} рестарт: +{total_penalty}с")
+                
+                embed.add_field(
+                    name="📊 Примеры расчета",
+                    value="\n".join(examples),
+                    inline=False
+                )
+                
+                embed.add_field(
+                    name="⚙️ Упрощенная настройка",
+                    value=f"Общий штраф: {settings.restart_penalty}с за каждый рестарт",
+                    inline=False
+                )
+                
+                embed.set_footer(text="Используйте /penalties для изменения настроек")
+                
+                await interaction.followup.send(embed=embed)
+                
+        except Exception as e:
+            await interaction.followup.send(
+                f"Ошибка при получении информации о штрафах: {str(e)}",
                 ephemeral=True
             )
 
@@ -226,8 +483,8 @@ class Admin(commands.Cog):
             )
             
             embed.add_field(
-                name="⚡ Штрафы",
-                value="За каждый рестарт добавляется штрафное время (настраивается администратором)",
+                name="⚡ Штрафы за рестарты",
+                value="Гибкая система штрафов с бесплатными рестартами и настраиваемыми уровнями",
                 inline=False
             )
             
@@ -241,6 +498,8 @@ class Admin(commands.Cog):
                 name="🔧 Административные команды",
                 value="""
                 `/settings` - Настройки сервера
+                `/penalties` - Детальная настройка штрафов
+                `/penalty_info` - Информация о штрафах
                 `/setup_channels` - Настройка каналов
                 `/new_season` - Создать новый сезон
                 """,
@@ -385,6 +644,15 @@ class Admin(commands.Cog):
                 embed.add_field(
                     name="⚙️ Настройки",
                     value=f"Штраф за рестарт: {settings.restart_penalty} сек",
+                    inline=True
+                )
+                
+                # Show detailed penalty info
+                penalties = settings.restart_penalties
+                free_restarts = penalties.get("free_restarts", 2)
+                embed.add_field(
+                    name="⚡ Штрафы",
+                    value=f"Бесплатных: {free_restarts}",
                     inline=True
                 )
                 
