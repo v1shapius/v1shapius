@@ -93,9 +93,8 @@ class DetailedPenaltyModal(Modal, title="Детальная настройка �
                 return
             
             # Update penalty settings
-            db_manager = DatabaseManager()
-        session = await db_manager.get_session()
-        async with session as session:
+            session = await bot.db_manager.get_session()
+            async with session as session:
                 settings = await session.get(PenaltySettings, interaction.guild_id)
                 
                 if not settings:
