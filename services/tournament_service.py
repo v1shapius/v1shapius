@@ -355,6 +355,24 @@ class TournamentService:
                             except discord.Forbidden:
                                 # User has DMs disabled
                                 pass
+            
+            # Send guild notification with role tagging
+            if hasattr(self.bot, 'role_manager'):
+                tagged_message = await self.bot.role_manager.tag_role_for_event(
+                    guild_id=tournament.guild_id,
+                    event_type="tournament_start",
+                    message="🏅 **Турнир начался!** - Проверьте расписание матчей!"
+                )
+                
+                # Send to guild's system channel or first available channel
+                guild = self.bot.get_guild(tournament.guild_id)
+                if guild:
+                    channel = guild.system_channel or guild.text_channels[0] if guild.text_channels else None
+                    if channel:
+                        try:
+                            await channel.send(tagged_message)
+                        except discord.Forbidden:
+                            logger.warning(f"Could not send tournament start notification to guild {tournament.guild_id}")
                                 
         except Exception as e:
             logger.error(f"Error notifying tournament started: {e}")

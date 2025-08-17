@@ -14,6 +14,7 @@ from services.season_manager import SeasonManager
 from services.security_service import SecurityService
 from services.achievement_service import AchievementService
 from services.tournament_service import TournamentService
+from services.role_manager import RoleManager
 
 # Configure logging
 logging.basicConfig(
@@ -47,6 +48,7 @@ class RatingBot(commands.Bot):
         self.security_service = None
         self.achievement_service = None
         self.tournament_service = None
+        self.role_manager = None
         self.locale = Config.DEFAULT_LOCALE
         
     async def setup_hook(self):
@@ -116,6 +118,11 @@ class RatingBot(commands.Bot):
             self.tournament_service = TournamentService(self)
             asyncio.create_task(self.tournament_service.start_monitoring())
             logger.info("Tournament service started")
+            
+            # Start role manager service
+            self.role_manager = RoleManager(self)
+            asyncio.create_task(self.role_manager.start_monitoring())
+            logger.info("Role manager service started")
             
         except Exception as e:
             logger.error(f"Failed to start background services: {e}")

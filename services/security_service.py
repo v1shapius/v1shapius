@@ -487,6 +487,35 @@ class SecurityService:
             logger.error(f"Error sending security notifications: {e}")
     
     async def send_guild_security_notification(self, guild_id: int, security_event: SecurityEvent):
+        """Send security notification to guild with role tagging"""
+        try:
+            # Determine event type for role tagging
+            event_type = "security_alert"
+            if security_event.event_type in [SecurityEventType.SUSPICIOUS_MATCH, SecurityEventType.MATCH_INTEGRITY_VIOLATION]:
+                event_type = "referee_needed"
+            elif security_event.security_level == SecurityLevel.CRITICAL:
+                event_type = "admin_notification"
+            
+            # Create tagged message
+            if hasattr(self.bot, 'role_manager'):
+                tagged_message = await self.bot.role_manager.tag_role_for_event(
+                    guild_id=guild_id,
+                    event_type=event_type,
+                    message=f"🚨 **Событие безопасности**: {security_event.description}"
+                )
+                
+                # Send to guild's system channel or first available channel
+                guild = self.bot.get_guild(guild_id)
+                if guild:
+                    channel = guild.system_channel or guild.text_channels[0] if guild.text_channels else None
+                    if channel:
+                        try:
+                            await channel.send(tagged_message)
+                        except discord.Forbidden:
+                            logger.warning(f"Could not send security notification to guild {guild_id}")
+                            
+        except Exception as e:
+            logger.error(f"Error sending guild security notification: {e}")
         """Send security notification to a specific guild"""
         try:
             guild = self.bot.get_guild(guild_id)

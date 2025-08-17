@@ -109,8 +109,38 @@ class SeasonManager:
             
             logger.info(f"Sent season end warnings to {len(players)} players")
             
+            # Send guild notification with role tagging
+            if hasattr(self.bot, 'role_manager'):
+                guild_id = await self.get_guild_id_for_season(session, season)
+                if guild_id:
+                    tagged_message = await self.bot.role_manager.tag_role_for_event(
+                        guild_id=guild_id,
+                        event_type="season_end",
+                        message="🚨 **Внимание! Сезон завершается** - Завершите активные матчи!"
+                    )
+                    
+                    # Send to guild's system channel or first available channel
+                    guild = self.bot.get_guild(guild_id)
+                    if guild:
+                        channel = guild.system_channel or guild.text_channels[0] if guild.text_channels else None
+                        if channel:
+                            try:
+                                await channel.send(tagged_message)
+                            except discord.Forbidden:
+                                logger.warning(f"Could not send season end warning to guild {guild_id}")
+            
         except Exception as e:
             logger.error(f"Error sending season end warnings: {e}")
+    
+    async def get_guild_id_for_season(self, session, season) -> Optional[int]:
+        """Get guild ID for a season"""
+        try:
+            # This is a placeholder - you'll need to implement based on your data structure
+            # For now, return None to avoid errors
+            return None
+        except Exception as e:
+            logger.error(f"Error getting guild ID for season: {e}")
+            return None
     
     async def send_player_warning(self, discord_id: int, season: Season):
         """Send season end warning to a specific player"""
