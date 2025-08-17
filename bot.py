@@ -12,10 +12,12 @@ from config.config import Config
 from database.database import DatabaseManager
 from services.season_manager import SeasonManager
 from services.security_service import SecurityService
+from services.achievement_service import AchievementService
+from services.tournament_service import TournamentService
 
 # Configure logging
 logging.basicConfig(
-    level=logging.INFO,
+    level=getattr(logging, Config.LOG_LEVEL),
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
         logging.FileHandler('bot.log'),
@@ -43,6 +45,8 @@ class RatingBot(commands.Bot):
         self.db_manager = None
         self.season_manager = None
         self.security_service = None
+        self.achievement_service = None
+        self.tournament_service = None
         self.locale = Config.DEFAULT_LOCALE
         
     async def setup_hook(self):
@@ -67,6 +71,7 @@ class RatingBot(commands.Bot):
         await self.load_extension("cogs.referee_system")
         await self.load_extension("cogs.referee_management")
         await self.load_extension("cogs.achievements")
+        await self.load_extension("cogs.tournaments")
         
         logger.info("All cogs loaded successfully")
         
@@ -86,7 +91,7 @@ class RatingBot(commands.Bot):
         await self.change_presence(
             activity=discord.Activity(
                 type=discord.ActivityType.watching,
-                name="rating matches"
+                name="rating matches & achievements"
             )
         )
         
@@ -101,6 +106,16 @@ class RatingBot(commands.Bot):
             self.security_service = SecurityService(self)
             asyncio.create_task(self.security_service.start_monitoring())
             logger.info("Security service started")
+            
+            # Start achievement service
+            self.achievement_service = AchievementService(self)
+            asyncio.create_task(self.achievement_service.start_monitoring())
+            logger.info("Achievement service started")
+            
+            # Start tournament service
+            self.tournament_service = TournamentService(self)
+            asyncio.create_task(self.tournament_service.start_monitoring())
+            logger.info("Tournament service started")
             
         except Exception as e:
             logger.error(f"Failed to start background services: {e}")
@@ -147,6 +162,28 @@ class RatingBot(commands.Bot):
         # Log member departure for security analysis
         if self.security_service:
             await self.security_service.log_member_departure(member)
+    
+    async def on_message(self, message):
+        """Called when a message is sent"""
+        # Ignore bot messages
+        if message.author.bot:
+            return
+        
+        # Process commands
+        await self.process_commands(message)
+        
+        # Check for achievement triggers
+        if self.achievement_service:
+            await self.achievement_service.check_message_triggers(message)
+    
+    async def on_reaction_add(self, reaction, user):
+        """Called when a reaction is added"""
+        if user.bot:
+            return
+        
+        # Check for achievement triggers
+        if self.achievement_service:
+            await self.achievement_service.check_reaction_triggers(reaction, user)
 
 async def main():
     """Main function to run the bot"""
