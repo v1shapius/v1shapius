@@ -3,6 +3,8 @@ from sqlalchemy.orm import relationship
 from .base import Base, TimestampMixin
 
 class Referee(Base, TimestampMixin):
+    """Referee model for managing match disputes and interventions"""
+    
     __tablename__ = "referees"
     
     id = Column(Integer, primary_key=True)

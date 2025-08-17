@@ -5,6 +5,8 @@ from dotenv import load_dotenv
 load_dotenv()
 
 class Config:
+    """Configuration class for Discord Rating Bot"""
+    
     # Discord Bot Token
     DISCORD_TOKEN: str = os.getenv("DISCORD_TOKEN", "")
     
@@ -37,6 +39,21 @@ class Config:
         """Validate required configuration values"""
         required_fields = ["DISCORD_TOKEN", "DATABASE_URL"]
         for field in required_fields:
-            if not getattr(cls, field):
+            value = getattr(cls, field)
+            if not value:
                 raise ValueError(f"Missing required configuration: {field}")
         return True
+    
+    @classmethod
+    def get_database_url(cls) -> str:
+        """Get database URL with validation"""
+        if not cls.DATABASE_URL:
+            raise ValueError("Database URL not configured")
+        return cls.DATABASE_URL
+    
+    @classmethod
+    def get_discord_token(cls) -> str:
+        """Get Discord token with validation"""
+        if not cls.DISCORD_TOKEN:
+            raise ValueError("Discord token not configured")
+        return cls.DISCORD_TOKEN

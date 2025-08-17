@@ -2,8 +2,11 @@ from sqlalchemy import Column, Integer, String, BigInteger, Boolean, DateTime, F
 from sqlalchemy.orm import relationship
 from .base import Base, TimestampMixin
 from datetime import datetime, timedelta
+import time
 
 class Season(Base, TimestampMixin):
+    """Season model for organizing matches and ratings"""
+    
     __tablename__ = "seasons"
     
     id = Column(Integer, primary_key=True)
@@ -13,13 +16,13 @@ class Season(Base, TimestampMixin):
     
     # Season status
     is_active = Column(Boolean, default=True, nullable=False)
-    is_ending = Column(Boolean, default=False, nullable=False)  # New: season is ending
-    is_rating_locked = Column(Boolean, default=False, nullable=False)  # New: rating calculation locked
+    is_ending = Column(Boolean, default=False, nullable=False)  # Season is ending
+    is_rating_locked = Column(Boolean, default=False, nullable=False)  # Rating calculation locked
     
     # Season end management
-    season_end_warning_sent = Column(Boolean, default=False, nullable=False)  # New: warning sent to active players
-    new_matches_blocked = Column(Boolean, default=False, nullable=False)  # New: new matches blocked
-    rating_calculation_locked = Column(Boolean, default=False, nullable=False)  # New: rating updates blocked
+    season_end_warning_sent = Column(Boolean, default=False, nullable=False)  # Warning sent to active players
+    new_matches_blocked = Column(Boolean, default=False, nullable=False)  # New matches blocked
+    rating_calculation_locked = Column(Boolean, default=False, nullable=False)  # Rating updates blocked
     
     # Glicko-2 parameters
     tau = Column(Float, default=0.5, nullable=False)  # System parameter
@@ -35,7 +38,9 @@ class Season(Base, TimestampMixin):
     @property
     def days_until_end(self) -> int:
         """Calculate days until season ends"""
-        return (self.end_date - datetime.utcnow()).days
+        now = datetime.utcnow()
+        delta = self.end_date - now
+        return max(0, delta.days)
     
     @property
     def is_ending_soon(self) -> bool:

@@ -1,7 +1,8 @@
 import asyncio
 import logging
+import discord
 from datetime import datetime, timedelta
-from typing import List, Optional
+from typing import List, Optional, Tuple
 from sqlalchemy import select, and_, or_
 from database.database import DatabaseManager
 from models.season import Season
@@ -11,6 +12,8 @@ from models.player import Player
 logger = logging.getLogger(__name__)
 
 class SeasonManager:
+    """Service for managing seasons and their lifecycle"""
+    
     def __init__(self, bot):
         self.bot = bot
         self.db = DatabaseManager()
@@ -402,7 +405,7 @@ class SeasonManager:
         
         return embed
     
-    async def can_create_new_match(self, guild_id: int) -> tuple[bool, str]:
+    async def can_create_new_match(self, guild_id: int) -> Tuple[bool, str]:
         """Check if new matches can be created in a guild"""
         try:
             async with self.db.get_session() as session:

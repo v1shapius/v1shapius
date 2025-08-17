@@ -2,13 +2,16 @@ from sqlalchemy import Column, Integer, String, BigInteger, ForeignKey, Text, Bo
 from sqlalchemy.orm import relationship
 from .base import Base, TimestampMixin
 import enum
+import time
 
 class MatchFormat(enum.Enum):
+    """Match format enumeration"""
     BO1 = "bo1"
     BO2 = "bo2"
     BO3 = "bo3"
 
 class MatchStatus(enum.Enum):
+    """Match status enumeration"""
     WAITING_PLAYERS = "waiting_players"
     WAITING_READINESS = "waiting_readiness"
     DRAFT_VERIFICATION = "draft_verification"
@@ -16,11 +19,12 @@ class MatchStatus(enum.Enum):
     GAME_PREPARATION = "game_preparation"
     GAME_IN_PROGRESS = "game_in_progress"
     RESULT_CONFIRMATION = "result_confirmation"
-    REFEREE_INTERVENTION = "referee_intervention"  # New status for referee cases
+    REFEREE_INTERVENTION = "referee_intervention"  # Status for referee cases
     COMPLETE = "complete"
-    ANNULLED = "annulled"  # New status for annulled matches
+    ANNULLED = "annulled"  # Status for annulled matches
 
 class MatchStage(enum.Enum):
+    """Match stage enumeration"""
     WAITING_READINESS = "waiting_readiness"
     DRAFT_VERIFICATION = "draft_verification"
     FIRST_PLAYER_SELECTION = "first_player_selection"
@@ -30,6 +34,8 @@ class MatchStage(enum.Enum):
     REFEREE_INTERVENTION = "referee_intervention"
 
 class Match(Base, TimestampMixin):
+    """Match model representing a game between two players"""
+    
     __tablename__ = "matches"
     
     id = Column(Integer, primary_key=True)
@@ -86,13 +92,13 @@ class Match(Base, TimestampMixin):
         self.referee_id = referee_id
         self.referee_intervention_stage = self.current_stage
         self.referee_intervention_reason = reason
-        self.referee_intervention_time = int(__import__('time').time())
+        self.referee_intervention_time = int(time.time())
         self.status = MatchStatus.REFEREE_INTERVENTION
     
     def resolve_referee_intervention(self, resolution: str):
         """Resolve referee intervention"""
         self.referee_resolution = resolution
-        self.referee_resolution_time = int(__import__('time').time())
+        self.referee_resolution_time = int(time.time())
         self.status = self.referee_intervention_stage  # Return to previous stage
     
     def annul_match(self, reason: str):
@@ -100,21 +106,20 @@ class Match(Base, TimestampMixin):
         self.status = MatchStatus.ANNULLED
         self.annulment_reason = reason
         self.referee_resolution = f"Матч аннулирован: {reason}"
-        self.referee_resolution_time = int(__import__('time').time())
+        self.referee_resolution_time = int(time.time())
 
 class MatchState(Base, TimestampMixin):
     """Match state model for tracking match progress"""
     
-    __tablename__ = 'match_states'
+    __tablename__ = "match_states"
     
     id = Column(Integer, primary_key=True)
-    match_id = Column(Integer, ForeignKey('matches.id'), nullable=False)
+    match_id = Column(Integer, ForeignKey("matches.id"), nullable=False)
     stage = Column(Enum(MatchStage), nullable=False)
-    data = Column(JSON, nullable=True)  # Store stage-specific data
-    notes = Column(Text, nullable=True)
+    data = Column(Text, nullable=True)  # JSON data for stage-specific information
     
     # Relationships
-    match = relationship("Match", back_populates="states")
+    match = relationship("Match", back_populates="match_states")
     
     def __repr__(self):
         return f"<MatchState(id={self.id}, match_id={self.match_id}, stage={self.stage.value})>"

@@ -1,7 +1,6 @@
 import asyncio
 import discord
 from discord.ext import commands
-from discord import app_commands
 import logging
 import sys
 import os
@@ -11,11 +10,6 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from config.config import Config
 from database.database import DatabaseManager
-from cogs.match_management import MatchManagement
-from cogs.rating_system import RatingSystem
-from cogs.voice_control import VoiceControl
-from cogs.admin import Admin
-from cogs.draft_verification import DraftVerification
 from services.season_manager import SeasonManager
 
 # Configure logging
@@ -46,6 +40,7 @@ class RatingBot(commands.Bot):
         )
         
         self.db_manager = None
+        self.season_manager = None
         self.locale = Config.DEFAULT_LOCALE
         
     async def setup_hook(self):
@@ -67,6 +62,8 @@ class RatingBot(commands.Bot):
         await self.load_extension("cogs.voice_control")
         await self.load_extension("cogs.admin")
         await self.load_extension("cogs.draft_verification")
+        await self.load_extension("cogs.referee_system")
+        await self.load_extension("cogs.referee_management")
         
         logger.info("All cogs loaded successfully")
         
@@ -89,15 +86,14 @@ class RatingBot(commands.Bot):
                 name="rating matches"
             )
         )
-
-        # Initialize database
-        db = DatabaseManager()
-        await db.initialize()
         
         # Start season manager service
-        season_manager = SeasonManager(self)
-        asyncio.create_task(season_manager.start_monitoring())
-        logger.info("Season manager service started")
+        try:
+            self.season_manager = SeasonManager(self)
+            asyncio.create_task(self.season_manager.start_monitoring())
+            logger.info("Season manager service started")
+        except Exception as e:
+            logger.error(f"Failed to start season manager: {e}")
     
     async def on_guild_join(self, guild):
         """Called when bot joins a new guild"""

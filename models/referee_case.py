@@ -4,6 +4,7 @@ from .base import Base, TimestampMixin
 import enum
 
 class CaseType(enum.Enum):
+    """Case type enumeration for referee interventions"""
     DRAFT_DISPUTE = "draft_dispute"
     STREAM_ISSUE = "stream_issue"
     TIME_DISPUTE = "time_dispute"
@@ -13,6 +14,7 @@ class CaseType(enum.Enum):
     OTHER = "other"
 
 class CaseStatus(enum.Enum):
+    """Case status enumeration"""
     OPENED = "opened"
     ASSIGNED = "assigned"
     IN_PROGRESS = "in_progress"
@@ -20,6 +22,7 @@ class CaseStatus(enum.Enum):
     CLOSED = "closed"
 
 class ResolutionType(enum.Enum):
+    """Resolution type enumeration"""
     CONTINUE_MATCH = "continue_match"
     MODIFY_RESULTS = "modify_results"
     REPLAY_GAME = "replay_game"
@@ -28,6 +31,8 @@ class ResolutionType(enum.Enum):
     OTHER = "other"
 
 class RefereeCase(Base, TimestampMixin):
+    """Referee case model for tracking match disputes and their resolutions"""
+    
     __tablename__ = "referee_cases"
     
     id = Column(Integer, primary_key=True)
@@ -73,7 +78,8 @@ class RefereeCase(Base, TimestampMixin):
         self.resolution_type = resolution_type
         self.resolution_details = details
         self.referee_notes = notes
-        self.resolution_time = int(__import__('time').time())
+        import time
+        self.resolution_time = int(time.time())
         self.status = CaseStatus.RESOLVED
     
     def close_case(self):

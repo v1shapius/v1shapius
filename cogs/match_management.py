@@ -10,6 +10,8 @@ from models.player import Player
 from models.penalty_settings import PenaltySettings
 
 class MatchCreationModal(Modal, title="Создание матча"):
+    """Modal for creating a new match"""
+    
     def __init__(self, opponent: discord.Member):
         super().__init__()
         self.opponent = opponent
@@ -26,6 +28,8 @@ class MatchCreationModal(Modal, title="Создание матча"):
         self.add_item(self.format_input)
 
 class MatchJoinView(View):
+    """View for players to accept or decline match challenges"""
+    
     def __init__(self, challenger: discord.Member, opponent: discord.Member, match_format: str):
         super().__init__(timeout=300)
         self.challenger = challenger
@@ -47,6 +51,7 @@ class MatchJoinView(View):
         ))
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        """Check if user can interact with this view"""
         if interaction.user.id not in [self.challenger.id, self.opponent.id]:
             await interaction.response.send_message(
                 "Вы не можете взаимодействовать с этим вызовом.",
@@ -101,72 +106,68 @@ class MatchJoinView(View):
                 player1 = await self.get_or_create_player(session, self.challenger.id, self.challenger.display_name)
                 player2 = await self.get_or_create_player(session, self.opponent.id, self.opponent.display_name)
                 
-                # Get current season
-                current_season = await session.execute(
-                    "SELECT * FROM seasons WHERE is_active = true ORDER BY start_date DESC LIMIT 1"
-                )
-                current_season = current_season.scalar_one_or_none()
-                
-                if not current_season:
-                    await interaction.followup.send(
-                        "❌ Нет активного сезона. Обратитесь к администратору.",
-                        ephemeral=True
-                    )
-                    return
-                
                 # Create match
                 match = Match(
-                    format=MatchFormat(self.match_format),
-                    status='waiting_readiness',
-                    current_stage='waiting_readiness',
                     player1_id=player1.id,
                     player2_id=player2.id,
-                    season_id=current_season.id,
+                    format=MatchFormat(self.match_format.lower()),
                     guild_id=interaction.guild_id
                 )
                 
                 session.add(match)
                 await session.commit()
-                await session.refresh(match)
                 
                 # Create match thread
-                thread = await interaction.message.create_thread(
-                    name=f"Матч {self.challenger.display_name} vs {self.opponent.display_name} ({self.match_format.upper()})",
-                    auto_archive_duration=60
+                thread = await interaction.channel.create_thread(
+                    name=f"Матч {self.challenger.display_name} vs {self.opponent.display_name}",
+                    type=discord.ChannelType.public_thread
                 )
                 
                 # Update match with thread ID
                 match.thread_id = thread.id
                 await session.commit()
                 
-                # Send match thread message
+                # Send match confirmation
                 embed = discord.Embed(
                     title="🎮 Матч создан!",
-                    description=f"Матч между {self.challenger.mention} и {self.opponent.mention}",
+                    description=f"**{self.challenger.mention}** vs **{self.opponent.mention}**",
                     color=discord.Color.green()
                 )
-                embed.add_field(name="Формат", value=self.match_format.upper(), inline=True)
-                embed.add_field(name="Сезон", value=current_season.name, inline=True)
+                
+                embed.add_field(
+                    name="Формат",
+                    value=self.match_format.upper(),
+                    inline=True
+                )
+                
+                embed.add_field(
+                    name="Статус",
+                    value="Ожидание готовности игроков",
+                    inline=True
+                )
                 
                 await thread.send(
-                    f"{self.challenger.mention} {self.opponent.mention}",
+                    f"🎮 **Матч создан!**\n\n"
+                    f"**Игрок 1**: {self.challenger.mention}\n"
+                    f"**Игрок 2**: {self.opponent.mention}\n"
+                    f"**Формат**: {self.match_format.upper()}\n\n"
+                    f"Оба игрока должны подтвердить готовность к матчу.",
                     embed=embed
                 )
                 
-                # Update original message
                 await interaction.message.edit(
                     content=f"✅ Матч создан! Перейдите в {thread.mention}",
                     view=None
                 )
                 
         except Exception as e:
-            await interaction.followup.send(
+            await interaction.response.send_message(
                 f"❌ Ошибка при создании матча: {str(e)}",
                 ephemeral=True
             )
     
     async def get_or_create_player(self, session, discord_id: int, username: str) -> Player:
-        """Get or create a player"""
+        """Get existing player or create new one"""
         player = await session.execute(
             "SELECT * FROM players WHERE discord_id = :discord_id",
             {"discord_id": discord_id}
@@ -174,21 +175,19 @@ class MatchJoinView(View):
         player = player.scalar_one_or_none()
         
         if not player:
-            player = Player(
-                discord_id=discord_id,
-                username=username
-            )
+            player = Player(discord_id=discord_id, username=username)
             session.add(player)
             await session.commit()
             await session.refresh(player)
-            
+        
         return player
 
 class MatchManagement(commands.Cog):
+    """Cog for managing match creation and management"""
+    
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         self.db = DatabaseManager()
-        self.locale = LocaleManager()
         
     @app_commands.command(name="challenge", description="Вызвать игрока на матч")
     @app_commands.describe(
@@ -279,47 +278,54 @@ class MatchManagement(commands.Cog):
             async with self.db.get_session() as session:
                 active_match = await session.execute(
                     """
-                    SELECT * FROM matches 
-                    WHERE guild_id = :guild_id 
-                    AND status != 'complete'
+                    SELECT m.* FROM matches m 
+                    JOIN players p1 ON m.player1_id = p1.id 
+                    JOIN players p2 ON m.player2_id = p2.id 
+                    WHERE m.guild_id = :guild_id 
+                    AND m.status NOT IN ('complete', 'annulled')
                     AND (
-                        (player1_id IN (SELECT id FROM players WHERE discord_id = :player1_id) 
-                         AND player2_id IN (SELECT id FROM players WHERE discord_id = :player2_id))
-                        OR 
-                        (player1_id IN (SELECT id FROM players WHERE discord_id = :player2_id) 
-                         AND player2_id IN (SELECT id FROM players WHERE discord_id = :player1_id))
+                        (p1.discord_id = :user_id AND p2.discord_id = :opponent_id)
+                        OR (p1.discord_id = :opponent_id AND p2.discord_id = :user_id)
                     )
                     """,
                     {
                         "guild_id": interaction.guild_id,
-                        "player1_id": interaction.user.id,
-                        "player2_id": opponent.id
+                        "user_id": interaction.user.id,
+                        "opponent_id": opponent.id
                     }
                 )
                 active_match = active_match.scalar_one_or_none()
                 
                 if active_match:
                     await interaction.followup.send(
-                        f"❌ У вас уже есть активный матч с {opponent.mention}",
+                        f"❌ У вас уже есть активный матч с {opponent.mention}.",
                         ephemeral=True
                     )
                     return
-                    
-            # Create challenge message
+            
+            # Create challenge view
+            view = MatchJoinView(interaction.user, opponent, format)
+            
             embed = discord.Embed(
                 title="⚔️ Вызов на матч!",
                 description=f"{interaction.user.mention} вызывает {opponent.mention} на матч!",
-                color=discord.Color.orange()
+                color=discord.Color.blue()
             )
-            embed.add_field(name="Формат", value=format.upper(), inline=True)
-            embed.add_field(name="Вызывающий", value=interaction.user.display_name, inline=True)
-            embed.add_field(name="Оппонент", value=opponent.display_name, inline=True)
             
-            # Create view for accepting/declining
-            view = MatchJoinView(interaction.user, opponent, format.lower())
+            embed.add_field(
+                name="Формат",
+                value=format.upper(),
+                inline=True
+            )
+            
+            embed.add_field(
+                name="Статус",
+                value="Ожидание ответа",
+                inline=True
+            )
             
             await interaction.followup.send(
-                f"{opponent.mention}",
+                f"⚔️ **{interaction.user.mention}** вызывает **{opponent.mention}** на матч!",
                 embed=embed,
                 view=view
             )
@@ -331,4 +337,5 @@ class MatchManagement(commands.Cog):
             )
 
 async def setup(bot: commands.Bot):
+    """Setup function for the cog"""
     await bot.add_cog(MatchManagement(bot))
