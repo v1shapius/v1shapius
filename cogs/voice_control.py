@@ -28,7 +28,9 @@ class VoiceChannelView(View):
             
         try:
             # Get match and create voice channel
-            async with DatabaseManager().get_session() as session:
+            db_manager = DatabaseManager()
+        session = await db_manager.get_session()
+        async with session as session:
                 match = await session.get(Match, self.match_id)
                 if not match:
                     await interaction.response.send_message(
@@ -117,7 +119,8 @@ class VoiceControl(commands.Cog):
             # Extract match ID from channel name
             match_id = int(voice_channel.name.split("-")[1])
             
-            async with self.db.get_session() as session:
+            session = await self.db.get_session()
+        async with session as session:
                 match = await session.get(Match, match_id)
                 if not match:
                     return
@@ -171,7 +174,8 @@ class VoiceControl(commands.Cog):
             # Extract match ID from channel name
             match_id = int(voice_channel.name.split("-")[1])
             
-            async with self.db.get_session() as session:
+            session = await self.db.get_session()
+        async with session as session:
                 match = await session.get(Match, match_id)
                 if not match:
                     return
@@ -188,7 +192,8 @@ class VoiceControl(commands.Cog):
         """Check stream status of both players"""
         try:
             # Get player members
-            async with self.db.get_session() as session:
+            session = await self.db.get_session()
+        async with session as session:
                 player1 = await session.execute(
                     "SELECT * FROM players WHERE id = :player_id",
                     {"player_id": match.player1_id}
@@ -278,7 +283,8 @@ class VoiceControl(commands.Cog):
                 del self.voice_channels_to_delete[channel_id]
                 
             # Update match in database
-            async with self.db.get_session() as session:
+            session = await self.db.get_session()
+        async with session as session:
                 match = await session.get(Match, match_id)
                 if match:
                     match.voice_channel_id = None

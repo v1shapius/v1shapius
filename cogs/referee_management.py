@@ -75,7 +75,8 @@ class RefereeManagement(commands.Cog):
             return
             
         try:
-            async with self.db.get_session() as session:
+            session = await self.db.get_session()
+        async with session as session:
                 # Check if user is already a referee
                 existing_referee = await session.execute(
                     "SELECT * FROM referees WHERE discord_id = :discord_id AND guild_id = :guild_id",
@@ -138,7 +139,8 @@ class RefereeManagement(commands.Cog):
             return
             
         try:
-            async with self.db.get_session() as session:
+            session = await self.db.get_session()
+        async with session as session:
                 # Check if user is a referee
                 referee = await session.execute(
                     "SELECT * FROM referees WHERE discord_id = :discord_id AND guild_id = :guild_id",
@@ -180,7 +182,8 @@ class RefereeManagement(commands.Cog):
             return
             
         try:
-            async with self.db.get_session() as session:
+            session = await self.db.get_session()
+        async with session as session:
                 # Check if user is a referee
                 referee = await session.execute(
                     "SELECT * FROM referees WHERE discord_id = :discord_id AND guild_id = :guild_id",
@@ -211,7 +214,8 @@ class RefereeManagement(commands.Cog):
         await interaction.response.defer()
         
         try:
-            async with self.db.get_session() as session:
+            session = await self.db.get_session()
+        async with session as session:
                 # Get all referees for this guild
                 referees = await session.execute(
                     "SELECT * FROM referees WHERE guild_id = :guild_id ORDER BY is_active DESC, username ASC",
@@ -291,7 +295,8 @@ class RefereeManagement(commands.Cog):
         await interaction.response.defer()
         
         try:
-            async with self.db.get_session() as session:
+            session = await self.db.get_session()
+        async with session as session:
                 # Get referee statistics
                 stats = await session.execute(
                     """

@@ -35,7 +35,8 @@ class AchievementService:
     async def check_achievements(self):
         """Check and award achievements for all players"""
         try:
-            async with self.db.get_session() as session:
+            session = await self.db.get_session()
+        async with session as session:
                 # Get all active players
                 players = await session.execute(
                     select(Player).where(Player.is_active == True)
@@ -311,7 +312,8 @@ class AchievementService:
         """Notify player about unlocked achievement"""
         try:
             # Get player's Discord ID
-            async with self.db.get_session() as session:
+            session = await self.db.get_session()
+        async with session as session:
                 player = await session.execute(
                     "SELECT discord_id FROM players WHERE id = :player_id",
                     {"player_id": player_id}
@@ -361,7 +363,8 @@ class AchievementService:
     async def get_player_achievements(self, player_id: int) -> List[Achievement]:
         """Get all achievements for a player"""
         try:
-            async with self.db.get_session() as session:
+            session = await self.db.get_session()
+        async with session as session:
                 achievements = await session.execute(
                     "SELECT * FROM achievements WHERE player_id = :player_id ORDER BY unlocked_at DESC",
                     {"player_id": player_id}
@@ -374,7 +377,8 @@ class AchievementService:
     async def get_player_progress(self, player_id: int) -> List[AchievementProgress]:
         """Get achievement progress for a player"""
         try:
-            async with self.db.get_session() as session:
+            session = await self.db.get_session()
+        async with session as session:
                 progress = await session.execute(
                     "SELECT * FROM achievement_progress WHERE player_id = :player_id",
                     {"player_id": player_id}
@@ -387,7 +391,8 @@ class AchievementService:
     async def update_achievement_progress(self, player_id: int, achievement_type: AchievementType, increment: int = 1):
         """Update progress towards an achievement"""
         try:
-            async with self.db.get_session() as session:
+            session = await self.db.get_session()
+        async with session as session:
                 # Get or create progress record
                 progress = await session.execute(
                     "SELECT * FROM achievement_progress WHERE player_id = :player_id AND achievement_type = :achievement_type",
@@ -432,7 +437,8 @@ class AchievementService:
     async def get_achievement_leaderboard(self, limit: int = 10) -> List[Dict[str, Any]]:
         """Get leaderboard based on achievements"""
         try:
-            async with self.db.get_session() as session:
+            session = await self.db.get_session()
+        async with session as session:
                 leaderboard = await session.execute(
                     """
                     SELECT p.discord_id, p.username, COUNT(a.id) as achievement_count

@@ -69,7 +69,8 @@ class Achievements(commands.Cog):
             target_user = user or interaction.user
             
             # Get or create player
-            async with self.db.get_session() as session:
+            session = await self.db.get_session()
+        async with session as session:
                 player = await session.execute(
                     "SELECT * FROM players WHERE discord_id = :discord_id",
                     {"discord_id": target_user.id}
@@ -121,7 +122,8 @@ class Achievements(commands.Cog):
         await interaction.response.defer()
         
         try:
-            async with self.db.get_session() as session:
+            session = await self.db.get_session()
+        async with session as session:
                 # Get player
                 player = await session.execute(
                     "SELECT * FROM players WHERE discord_id = :discord_id",
@@ -170,7 +172,8 @@ class Achievements(commands.Cog):
         await interaction.response.defer()
         
         try:
-            async with self.db.get_session() as session:
+            session = await self.db.get_session()
+        async with session as session:
                 # Get top players by achievement count
                 top_players = await session.execute(
                     """
@@ -339,7 +342,8 @@ class Achievements(commands.Cog):
     async def check_and_award_achievements(self, player_id: int, match_id: int, match_result: dict):
         """Check and award achievements based on match result"""
         try:
-            async with self.db.get_session() as session:
+            session = await self.db.get_session()
+        async with session as session:
                 # Get player
                 player = await session.execute(
                     "SELECT * FROM players WHERE id = :player_id",
@@ -509,7 +513,8 @@ class Achievements(commands.Cog):
         """Notify player about unlocked achievement"""
         try:
             # Get player's Discord ID
-            async with self.db.get_session() as session:
+            session = await self.db.get_session()
+        async with session as session:
                 player = await session.execute(
                     "SELECT discord_id FROM players WHERE id = :player_id",
                     {"player_id": player_id}

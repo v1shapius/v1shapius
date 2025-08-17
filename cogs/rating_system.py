@@ -47,7 +47,9 @@ class LeaderboardView(View):
     async def update_leaderboard(self, interaction: discord.Interaction):
         """Update the leaderboard display"""
         try:
-            async with DatabaseManager().get_session() as session:
+            db_manager = DatabaseManager()
+            session = await db_manager.get_session()
+            async with session as session:
                 # Get current season
                 current_season = await session.execute(
                     "SELECT * FROM seasons WHERE is_active = true ORDER BY start_date DESC LIMIT 1"
@@ -125,7 +127,8 @@ class RatingSystem(commands.Cog):
         await interaction.response.defer()
         
         try:
-            async with self.db.get_session() as session:
+            session = await self.db.get_session()
+        async with session as session:
                 # Get current season
                 current_season = await session.execute(
                     "SELECT * FROM seasons WHERE is_active = true ORDER BY start_date DESC LIMIT 1"
@@ -214,7 +217,8 @@ class RatingSystem(commands.Cog):
         await interaction.response.defer()
         
         try:
-            async with self.db.get_session() as session:
+            session = await self.db.get_session()
+        async with session as session:
                 # Get current season
                 current_season = await session.execute(
                     "SELECT * FROM seasons WHERE is_active = true ORDER BY start_date DESC LIMIT 1"
@@ -298,7 +302,8 @@ class RatingSystem(commands.Cog):
         await interaction.response.defer()
         
         try:
-            async with self.db.get_session() as session:
+            session = await self.db.get_session()
+        async with session as session:
                 # Get player
                 player_data = await session.execute(
                     "SELECT * FROM players WHERE discord_id = :discord_id",
@@ -391,7 +396,8 @@ class RatingSystem(commands.Cog):
         await interaction.response.defer()
         
         try:
-            async with self.db.get_session() as session:
+            session = await self.db.get_session()
+        async with session as session:
                 # Get current active season
                 current_season = await session.execute(
                     "SELECT * FROM seasons WHERE is_active = true ORDER BY start_date DESC LIMIT 1"

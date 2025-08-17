@@ -34,7 +34,8 @@ class SeasonManager:
     async def check_season_status(self):
         """Check and update season status"""
         try:
-            async with self.db.get_session() as session:
+            session = await self.db.get_session()
+        async with session as session:
                 # Get current active season
                 current_season = await session.execute(
                     select(Season).where(Season.is_active == True)
@@ -224,7 +225,8 @@ class SeasonManager:
         """Notify all guilds that season is ending"""
         try:
             # Get unique guild IDs from matches in this season
-            async with self.db.get_session() as session:
+            session = await self.db.get_session()
+        async with session as session:
                 guilds = await session.execute(
                     select(Match.guild_id).where(
                         and_(
@@ -250,7 +252,8 @@ class SeasonManager:
                 return
             
             # Try to find audit channel
-            async with self.db.get_session() as session:
+            session = await self.db.get_session()
+        async with session as session:
                 penalty_settings = await session.execute(
                     "SELECT audit_channel_id FROM penalty_settings WHERE guild_id = :guild_id",
                     {"guild_id": guild_id}
@@ -352,7 +355,8 @@ class SeasonManager:
         """Notify all guilds that season has ended"""
         try:
             # Get unique guild IDs from matches in this season
-            async with self.db.get_session() as session:
+            session = await self.db.get_session()
+        async with session as session:
                 guilds = await session.execute(
                     select(Match.guild_id).where(
                         and_(
@@ -378,7 +382,8 @@ class SeasonManager:
                 return
             
             # Try to find audit channel
-            async with self.db.get_session() as session:
+            session = await self.db.get_session()
+        async with session as session:
                 penalty_settings = await session.execute(
                     "SELECT audit_channel_id FROM penalty_settings WHERE guild_id = :guild_id",
                     {"guild_id": guild_id}
@@ -438,7 +443,8 @@ class SeasonManager:
     async def can_create_new_match(self, guild_id: int) -> Tuple[bool, str]:
         """Check if new matches can be created in a guild"""
         try:
-            async with self.db.get_session() as session:
+            session = await self.db.get_session()
+        async with session as session:
                 # Get current active season
                 current_season = await session.execute(
                     select(Season).where(Season.is_active == True)
@@ -460,7 +466,8 @@ class SeasonManager:
     async def get_season_status(self, guild_id: int) -> Optional[Season]:
         """Get current season status for a guild"""
         try:
-            async with self.db.get_session() as session:
+            session = await self.db.get_session()
+        async with session as session:
                 current_season = await session.execute(
                     select(Season).where(Season.is_active == True)
                 )

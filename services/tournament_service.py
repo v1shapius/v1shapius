@@ -34,7 +34,8 @@ class TournamentService:
     async def check_tournaments(self):
         """Check and update tournament statuses"""
         try:
-            async with self.db.get_session() as session:
+            session = await self.db.get_session()
+        async with session as session:
                 # Check tournaments that can start
                 await self.check_tournaments_ready_to_start(session)
                 
@@ -328,7 +329,8 @@ class TournamentService:
         """Notify participants that tournament has started"""
         try:
             # Get tournament participants
-            async with self.db.get_session() as session:
+            session = await self.db.get_session()
+        async with session as session:
                 participants = await session.execute(
                     "SELECT * FROM tournament_participants WHERE tournament_id = :tournament_id AND is_active = true",
                     {"tournament_id": tournament.id}
@@ -423,7 +425,8 @@ class TournamentService:
                                prize_pool: Optional[str] = None) -> Tournament:
         """Create a new tournament"""
         try:
-            async with self.db.get_session() as session:
+            session = await self.db.get_session()
+        async with session as session:
                 tournament = Tournament(
                     name=name,
                     description=description,
@@ -451,7 +454,8 @@ class TournamentService:
     async def register_player(self, tournament_id: int, player_id: int) -> bool:
         """Register a player for a tournament"""
         try:
-            async with self.db.get_session() as session:
+            session = await self.db.get_session()
+        async with session as session:
                 # Check if tournament exists and is open for registration
                 tournament = await session.execute(
                     "SELECT * FROM tournaments WHERE id = :tournament_id AND status = 'registration'",
@@ -502,7 +506,8 @@ class TournamentService:
     async def get_tournament_info(self, tournament_id: int) -> Optional[Dict[str, Any]]:
         """Get detailed tournament information"""
         try:
-            async with self.db.get_session() as session:
+            session = await self.db.get_session()
+        async with session as session:
                 tournament = await session.execute(
                     "SELECT * FROM tournaments WHERE id = :tournament_id",
                     {"tournament_id": tournament_id}
@@ -549,7 +554,8 @@ class TournamentService:
     async def get_guild_tournaments(self, guild_id: int, status: Optional[TournamentStatus] = None) -> List[Dict[str, Any]]:
         """Get tournaments for a specific guild"""
         try:
-            async with self.db.get_session() as session:
+            session = await self.db.get_session()
+        async with session as session:
                 query = "SELECT * FROM tournaments WHERE guild_id = :guild_id"
                 params = {"guild_id": guild_id}
                 

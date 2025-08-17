@@ -228,7 +228,8 @@ class Tournaments(commands.Cog):
         
         try:
             # Get player ID
-            async with self.db.get_session() as session:
+            session = await self.db.get_session()
+        async with session as session:
                 player = await session.execute(
                     "SELECT id FROM players WHERE discord_id = :discord_id",
                     {"discord_id": interaction.user.id}

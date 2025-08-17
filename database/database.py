@@ -68,7 +68,8 @@ class DatabaseManager:
         """Initialize default settings for a new guild"""
         from models.penalty_settings import PenaltySettings
         
-        async with self.get_session() as session:
+        session = await self.get_session()
+        async with session as session:
             # Check if guild settings already exist
             existing = await session.get(PenaltySettings, guild_id)
             if not existing:
@@ -86,7 +87,8 @@ class DatabaseManager:
     async def health_check(self) -> bool:
         """Check database health"""
         try:
-            async with self.get_session() as session:
+            session = await self.get_session()
+            async with session as session:
                 await session.execute(text("SELECT 1"))
             return True
         except Exception as e:
@@ -95,7 +97,8 @@ class DatabaseManager:
     
     async def execute_query(self, query: str, params: dict = None):
         """Execute a raw SQL query"""
-        async with self.get_session() as session:
+        session = await self.get_session()
+        async with session as session:
             result = await session.execute(text(query), params or {})
             await session.commit()
             return result
@@ -104,7 +107,8 @@ class DatabaseManager:
         """Get player by Discord ID"""
         from models.player import Player
         
-        async with self.get_session() as session:
+        session = await self.get_session()
+        async with session as session:
             result = await session.execute(
                 text("SELECT * FROM players WHERE discord_id = :discord_id"),
                 {"discord_id": discord_id}
@@ -118,7 +122,8 @@ class DatabaseManager:
         """Create a new player"""
         from models.player import Player
         
-        async with self.get_session() as session:
+        session = await self.get_session()
+        async with session as session:
             player = Player(
                 discord_id=discord_id,
                 username=username,

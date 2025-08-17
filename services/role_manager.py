@@ -32,7 +32,8 @@ class RoleManager:
     async def check_role_assignments(self):
         """Check and assign roles to new members"""
         try:
-            async with self.db.get_session() as session:
+            session = await self.db.get_session()
+        async with session as session:
                 # Get all active guilds
                 guilds = await session.execute(
                     select(Guild).where(Guild.is_active == True)
@@ -142,7 +143,8 @@ class RoleManager:
     async def tag_role_for_event(self, guild_id: int, event_type: str, message: str = "") -> str:
         """Tag appropriate role for different events"""
         try:
-            async with self.db.get_session() as session:
+            session = await self.db.get_session()
+        async with session as session:
                 # Get guild role configuration
                 guild_roles = await session.execute(
                     select(GuildRoles).where(
@@ -199,7 +201,8 @@ class RoleManager:
     async def get_guild_roles(self, guild_id: int) -> List[Dict[str, Any]]:
         """Get all roles for a guild"""
         try:
-            async with self.db.get_session() as session:
+            session = await self.db.get_session()
+        async with session as session:
                 roles = await session.execute(
                     select(GuildRoles).where(
                         and_(
@@ -234,7 +237,8 @@ class RoleManager:
                                role_name: str, description: str = None, auto_assign: bool = False) -> Optional[GuildRoles]:
         """Create a new guild role configuration"""
         try:
-            async with self.db.get_session() as session:
+            session = await self.db.get_session()
+        async with session as session:
                 # Check if role already exists
                 existing_role = await session.execute(
                     select(GuildRoles).where(
@@ -278,7 +282,8 @@ class RoleManager:
     async def update_guild_role(self, role_id: int, **kwargs) -> bool:
         """Update a guild role configuration"""
         try:
-            async with self.db.get_session() as session:
+            session = await self.db.get_session()
+        async with session as session:
                 role = await session.execute(
                     select(GuildRoles).where(GuildRoles.id == role_id)
                 )
@@ -306,7 +311,8 @@ class RoleManager:
     async def delete_guild_role(self, role_id: int) -> bool:
         """Delete a guild role configuration"""
         try:
-            async with self.db.get_session() as session:
+            session = await self.db.get_session()
+        async with session as session:
                 role = await session.execute(
                     select(GuildRoles).where(GuildRoles.id == role_id)
                 )
@@ -330,7 +336,8 @@ class RoleManager:
     async def assign_role_to_member(self, guild_id: int, member_id: int, role_type: RoleType) -> bool:
         """Manually assign a role to a member"""
         try:
-            async with self.db.get_session() as session:
+            session = await self.db.get_session()
+        async with session as session:
                 # Get role configuration
                 role = await session.execute(
                     select(GuildRoles).where(
@@ -376,7 +383,8 @@ class RoleManager:
     async def remove_role_from_member(self, guild_id: int, member_id: int, role_type: RoleType) -> bool:
         """Remove a role from a member"""
         try:
-            async with self.db.get_session() as session:
+            session = await self.db.get_session()
+        async with session as session:
                 # Get role configuration
                 role = await session.execute(
                     select(GuildRoles).where(
@@ -422,7 +430,8 @@ class RoleManager:
     async def check_member_permissions(self, guild_id: int, member_id: int, permission: str) -> bool:
         """Check if a member has a specific permission"""
         try:
-            async with self.db.get_session() as session:
+            session = await self.db.get_session()
+        async with session as session:
                 # Get member's roles
                 member_roles = await session.execute(
                     """
@@ -449,7 +458,8 @@ class RoleManager:
     async def setup_default_roles(self, guild_id: int, guild_name: str) -> bool:
         """Setup default roles for a new guild"""
         try:
-            async with self.db.get_session() as session:
+            session = await self.db.get_session()
+        async with session as session:
                 # Check if guild already exists
                 existing_guild = await session.execute(
                     select(Guild).where(Guild.guild_id == guild_id)

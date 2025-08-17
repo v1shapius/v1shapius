@@ -42,7 +42,8 @@ class SecurityService:
     async def run_security_checks(self):
         """Run all security checks"""
         try:
-            async with self.db.get_session() as session:
+            session = await self.db.get_session()
+        async with session as session:
                 # Check for rating spikes
                 await self.check_rating_spikes(session)
                 
@@ -469,7 +470,8 @@ class SecurityService:
             guild_id = None
             if security_event.player_id:
                 # Get guild from player's matches
-                async with self.db.get_session() as session:
+                session = await self.db.get_session()
+        async with session as session:
                     player_match = await session.execute(
                         select(Match).where(
                             or_(Match.player1_id == security_event.player_id, Match.player2_id == security_event.player_id)
@@ -523,7 +525,8 @@ class SecurityService:
                 return
             
             # Try to find audit channel
-            async with self.db.get_session() as session:
+            session = await self.db.get_session()
+        async with session as session:
                 penalty_settings = await session.execute(
                     "SELECT audit_channel_id FROM penalty_settings WHERE guild_id = :guild_id",
                     {"guild_id": guild_id}

@@ -101,7 +101,9 @@ class MatchJoinView(View):
         """Proceed to match creation after both players accept"""
         try:
             # Create match in database
-            async with DatabaseManager().get_session() as session:
+            db_manager = DatabaseManager()
+        session = await db_manager.get_session()
+        async with session as session:
                 # Get or create players
                 player1 = await self.get_or_create_player(session, self.challenger.id, self.challenger.display_name)
                 player2 = await self.get_or_create_player(session, self.opponent.id, self.opponent.display_name)
@@ -251,7 +253,8 @@ class MatchManagement(commands.Cog):
                     return
             
             # Check if matches are restricted to specific channel
-            async with self.db.get_session() as session:
+            session = await self.db.get_session()
+        async with session as session:
                 penalty_settings = await session.execute(
                     "SELECT match_channel_id FROM penalty_settings WHERE guild_id = :guild_id",
                     {"guild_id": interaction.guild_id}
@@ -275,7 +278,8 @@ class MatchManagement(commands.Cog):
                 return
             
             # Check if there's already an active match between these players
-            async with self.db.get_session() as session:
+            session = await self.db.get_session()
+        async with session as session:
                 active_match = await session.execute(
                     """
                     SELECT m.* FROM matches m 

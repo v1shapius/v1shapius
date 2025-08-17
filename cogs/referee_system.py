@@ -116,7 +116,8 @@ class RefereeSystem(commands.Cog):
         
         try:
             # Check if user is in an active match
-            async with self.db.get_session() as session:
+            session = await self.db.get_session()
+        async with session as session:
                 # Find active match for this user
                 match = await session.execute(
                     """
@@ -237,7 +238,8 @@ class RefereeSystem(commands.Cog):
         await interaction.response.defer()
         
         try:
-            async with self.db.get_session() as session:
+            session = await self.db.get_session()
+        async with session as session:
                 # Check if user is a referee
                 referee = await session.execute(
                     "SELECT * FROM referees WHERE discord_id = :discord_id AND guild_id = :guild_id AND is_active = true",
@@ -318,7 +320,8 @@ class RefereeSystem(commands.Cog):
         await interaction.response.defer()
         
         try:
-            async with self.db.get_session() as session:
+            session = await self.db.get_session()
+        async with session as session:
                 # Check if user is a referee
                 referee = await session.execute(
                     "SELECT * FROM referees WHERE discord_id = :discord_id AND guild_id = :guild_id AND is_active = true",
@@ -426,7 +429,8 @@ class RefereeSystem(commands.Cog):
         await interaction.response.defer()
         
         try:
-            async with self.db.get_session() as session:
+            session = await self.db.get_session()
+        async with session as session:
                 # Check if user is a referee
                 referee = await session.execute(
                     "SELECT * FROM referees WHERE discord_id = :discord_id AND guild_id = :guild_id AND is_active = true",
