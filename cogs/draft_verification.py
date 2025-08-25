@@ -31,7 +31,7 @@ class DraftVerification(commands.Cog):
             
             # Get match
             session = await self.bot.db_manager.get_session()
-        async with session as session:
+        async with session:
                 match = await session.get(Match, match_id)
                 if not match:
                     await interaction.response.send_message(
@@ -105,7 +105,7 @@ class DraftVerification(commands.Cog):
         try:
             # Update match with draft link
             session = await self.bot.db_manager.get_session()
-        async with session as session:
+        async with session:
                 match.draft_link = draft_link
                 match.current_stage = MatchStage.WAITING_FIRST_PLAYER
                 await session.commit()
@@ -250,7 +250,7 @@ class FirstPlayerSelectionView(View):
         try:
             # Get match
             session = await interaction.client.db_manager.get_session()
-        async with session as session:
+        async with session:
                 match = await session.get(Match, self.match_id)
                 if not match:
                     await interaction.response.send_message(
@@ -319,7 +319,7 @@ class FirstPlayerSelectionView(View):
             
             # Update match
             session = await interaction.client.db_manager.get_session()
-        async with session as session:
+        async with session:
                 match.first_player_id = first_player_id
                 match.current_stage = MatchStage.PREPARING_GAME
                 await session.commit()
@@ -390,7 +390,7 @@ class GamePreparationView(View):
         try:
             # Get match
             session = await interaction.client.db_manager.get_session()
-        async with session as session:
+        async with session:
                 match = await session.get(Match, self.match_id)
                 if not match:
                     await interaction.response.send_message(
@@ -437,7 +437,7 @@ class GamePreparationView(View):
         try:
             # Get match
             session = await interaction.client.db_manager.get_session()
-        async with session as session:
+        async with session:
                 match = await session.get(Match, self.match_id)
                 if not match:
                     await interaction.response.send_message(
@@ -487,7 +487,7 @@ class GamePreparationView(View):
         try:
             # Update match stage
             session = await interaction.client.db_manager.get_session()
-        async with session as session:
+        async with session:
                 match.current_stage = MatchStage.GAME_IN_PROGRESS
                 await session.commit()
             

@@ -69,7 +69,7 @@ class DatabaseManager:
         from models.penalty_settings import PenaltySettings
         
         session = await self.get_session()
-        async with session as session:
+        async with session:
             # Check if guild settings already exist
             existing = await session.get(PenaltySettings, guild_id)
             if not existing:
@@ -98,7 +98,7 @@ class DatabaseManager:
     async def execute_query(self, query: str, params: dict = None):
         """Execute a raw SQL query"""
         session = await self.get_session()
-        async with session as session:
+        async with session:
             result = await session.execute(text(query), params or {})
             await session.commit()
             return result
@@ -108,7 +108,7 @@ class DatabaseManager:
         from models.player import Player
         
         session = await self.get_session()
-        async with session as session:
+        async with session:
             result = await session.execute(
                 text("SELECT * FROM players WHERE discord_id = :discord_id"),
                 {"discord_id": discord_id}
@@ -123,7 +123,7 @@ class DatabaseManager:
         from models.player import Player
         
         session = await self.get_session()
-        async with session as session:
+        async with session:
             player = Player(
                 discord_id=discord_id,
                 username=username,

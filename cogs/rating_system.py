@@ -49,7 +49,7 @@ class LeaderboardView(View):
         try:
             db_manager = DatabaseManager()
             session = await db_manager.get_session()
-            async with session as session:
+            async with session:
                 # Get current season
                 current_season = await session.execute(
                     "SELECT * FROM seasons WHERE is_active = true ORDER BY start_date DESC LIMIT 1"
@@ -128,7 +128,7 @@ class RatingSystem(commands.Cog):
         
         try:
             session = await self.db.get_session()
-        async with session as session:
+        async with session:
                 # Get current season
                 current_season = await session.execute(
                     "SELECT * FROM seasons WHERE is_active = true ORDER BY start_date DESC LIMIT 1"
@@ -218,7 +218,7 @@ class RatingSystem(commands.Cog):
         
         try:
             session = await self.db.get_session()
-        async with session as session:
+        async with session:
                 # Get current season
                 current_season = await session.execute(
                     "SELECT * FROM seasons WHERE is_active = true ORDER BY start_date DESC LIMIT 1"
@@ -303,7 +303,7 @@ class RatingSystem(commands.Cog):
         
         try:
             session = await self.db.get_session()
-        async with session as session:
+        async with session:
                 # Get player
                 player_data = await session.execute(
                     "SELECT * FROM players WHERE discord_id = :discord_id",
@@ -397,7 +397,7 @@ class RatingSystem(commands.Cog):
         
         try:
             session = await self.db.get_session()
-        async with session as session:
+        async with session:
                 # Get current active season
                 current_season = await session.execute(
                     "SELECT * FROM seasons WHERE is_active = true ORDER BY start_date DESC LIMIT 1"

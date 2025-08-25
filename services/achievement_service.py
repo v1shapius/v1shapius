@@ -36,7 +36,7 @@ class AchievementService:
         """Check and award achievements for all players"""
         try:
             session = await self.db.get_session()
-        async with session as session:
+        async with session:
                 # Get all active players
                 players = await session.execute(
                     select(Player).where(Player.is_active == True)
@@ -313,7 +313,7 @@ class AchievementService:
         try:
             # Get player's Discord ID
             session = await self.db.get_session()
-        async with session as session:
+        async with session:
                 player = await session.execute(
                     "SELECT discord_id FROM players WHERE id = :player_id",
                     {"player_id": player_id}
@@ -364,7 +364,7 @@ class AchievementService:
         """Get all achievements for a player"""
         try:
             session = await self.db.get_session()
-        async with session as session:
+        async with session:
                 achievements = await session.execute(
                     "SELECT * FROM achievements WHERE player_id = :player_id ORDER BY unlocked_at DESC",
                     {"player_id": player_id}
@@ -378,7 +378,7 @@ class AchievementService:
         """Get achievement progress for a player"""
         try:
             session = await self.db.get_session()
-        async with session as session:
+        async with session:
                 progress = await session.execute(
                     "SELECT * FROM achievement_progress WHERE player_id = :player_id",
                     {"player_id": player_id}
@@ -392,7 +392,7 @@ class AchievementService:
         """Update progress towards an achievement"""
         try:
             session = await self.db.get_session()
-        async with session as session:
+        async with session:
                 # Get or create progress record
                 progress = await session.execute(
                     "SELECT * FROM achievement_progress WHERE player_id = :player_id AND achievement_type = :achievement_type",
@@ -438,7 +438,7 @@ class AchievementService:
         """Get leaderboard based on achievements"""
         try:
             session = await self.db.get_session()
-        async with session as session:
+        async with session:
                 leaderboard = await session.execute(
                     """
                     SELECT p.discord_id, p.username, COUNT(a.id) as achievement_count

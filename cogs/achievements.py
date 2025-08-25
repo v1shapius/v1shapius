@@ -70,7 +70,7 @@ class Achievements(commands.Cog):
             
             # Get or create player
             session = await self.db.get_session()
-        async with session as session:
+        async with session:
                 player = await session.execute(
                     "SELECT * FROM players WHERE discord_id = :discord_id",
                     {"discord_id": target_user.id}
@@ -123,7 +123,7 @@ class Achievements(commands.Cog):
         
         try:
             session = await self.db.get_session()
-        async with session as session:
+        async with session:
                 # Get player
                 player = await session.execute(
                     "SELECT * FROM players WHERE discord_id = :discord_id",
@@ -173,7 +173,7 @@ class Achievements(commands.Cog):
         
         try:
             session = await self.db.get_session()
-        async with session as session:
+        async with session:
                 # Get top players by achievement count
                 top_players = await session.execute(
                     """
@@ -343,7 +343,7 @@ class Achievements(commands.Cog):
         """Check and award achievements based on match result"""
         try:
             session = await self.db.get_session()
-        async with session as session:
+        async with session:
                 # Get player
                 player = await session.execute(
                     "SELECT * FROM players WHERE id = :player_id",
@@ -514,7 +514,7 @@ class Achievements(commands.Cog):
         try:
             # Get player's Discord ID
             session = await self.db.get_session()
-        async with session as session:
+        async with session:
                 player = await session.execute(
                     "SELECT discord_id FROM players WHERE id = :player_id",
                     {"player_id": player_id}
