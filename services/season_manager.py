@@ -35,7 +35,7 @@ class SeasonManager:
         """Check and update season status"""
         try:
             session = await self.db.get_session()
-        async with session:
+        async with session as session:
                 # Get current active season
                 current_season = await session.execute(
                     select(Season).where(Season.is_active == True)
@@ -226,7 +226,7 @@ class SeasonManager:
         try:
             # Get unique guild IDs from matches in this season
             session = await self.db.get_session()
-        async with session:
+        async with session as session:
                 guilds = await session.execute(
                     select(Match.guild_id).where(
                         and_(
@@ -253,7 +253,7 @@ class SeasonManager:
             
             # Try to find audit channel
             session = await self.db.get_session()
-        async with session:
+        async with session as session:
                 penalty_settings = await session.execute(
                     "SELECT audit_channel_id FROM penalty_settings WHERE guild_id = :guild_id",
                     {"guild_id": guild_id}
@@ -356,7 +356,7 @@ class SeasonManager:
         try:
             # Get unique guild IDs from matches in this season
             session = await self.db.get_session()
-        async with session:
+        async with session as session:
                 guilds = await session.execute(
                     select(Match.guild_id).where(
                         and_(
@@ -383,7 +383,7 @@ class SeasonManager:
             
             # Try to find audit channel
             session = await self.db.get_session()
-        async with session:
+        async with session as session:
                 penalty_settings = await session.execute(
                     "SELECT audit_channel_id FROM penalty_settings WHERE guild_id = :guild_id",
                     {"guild_id": guild_id}
@@ -444,7 +444,7 @@ class SeasonManager:
         """Check if new matches can be created in a guild"""
         try:
             session = await self.db.get_session()
-        async with session:
+        async with session as session:
                 # Get current active season
                 current_season = await session.execute(
                     select(Season).where(Season.is_active == True)
@@ -467,7 +467,7 @@ class SeasonManager:
         """Get current season status for a guild"""
         try:
             session = await self.db.get_session()
-        async with session:
+        async with session as session:
                 current_season = await session.execute(
                     select(Season).where(Season.is_active == True)
                 )

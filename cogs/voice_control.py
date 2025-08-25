@@ -30,7 +30,7 @@ class VoiceChannelView(View):
             # Get match and create voice channel
             db_manager = DatabaseManager()
         session = await db_manager.get_session()
-        async with session:
+        async with session as session:
                 match = await session.get(Match, self.match_id)
                 if not match:
                     await interaction.response.send_message(
@@ -120,7 +120,7 @@ class VoiceControl(commands.Cog):
             match_id = int(voice_channel.name.split("-")[1])
             
             session = await self.db.get_session()
-        async with session:
+        async with session as session:
                 match = await session.get(Match, match_id)
                 if not match:
                     return
@@ -175,7 +175,7 @@ class VoiceControl(commands.Cog):
             match_id = int(voice_channel.name.split("-")[1])
             
             session = await self.db.get_session()
-        async with session:
+        async with session as session:
                 match = await session.get(Match, match_id)
                 if not match:
                     return
@@ -193,7 +193,7 @@ class VoiceControl(commands.Cog):
         try:
             # Get player members
             session = await self.db.get_session()
-        async with session:
+        async with session as session:
                 player1 = await session.execute(
                     "SELECT * FROM players WHERE id = :player_id",
                     {"player_id": match.player1_id}
@@ -284,7 +284,7 @@ class VoiceControl(commands.Cog):
                 
             # Update match in database
             session = await self.db.get_session()
-        async with session:
+        async with session as session:
                 match = await session.get(Match, match_id)
                 if match:
                     match.voice_channel_id = None

@@ -35,7 +35,7 @@ class TournamentService:
         """Check and update tournament statuses"""
         try:
             session = await self.db.get_session()
-        async with session:
+        async with session as session:
                 # Check tournaments that can start
                 await self.check_tournaments_ready_to_start(session)
                 
@@ -330,7 +330,7 @@ class TournamentService:
         try:
             # Get tournament participants
             session = await self.db.get_session()
-        async with session:
+        async with session as session:
                 participants = await session.execute(
                     "SELECT * FROM tournament_participants WHERE tournament_id = :tournament_id AND is_active = true",
                     {"tournament_id": tournament.id}
@@ -426,7 +426,7 @@ class TournamentService:
         """Create a new tournament"""
         try:
             session = await self.db.get_session()
-        async with session:
+        async with session as session:
                 tournament = Tournament(
                     name=name,
                     description=description,
@@ -455,7 +455,7 @@ class TournamentService:
         """Register a player for a tournament"""
         try:
             session = await self.db.get_session()
-        async with session:
+        async with session as session:
                 # Check if tournament exists and is open for registration
                 tournament = await session.execute(
                     "SELECT * FROM tournaments WHERE id = :tournament_id AND status = 'registration'",
@@ -507,7 +507,7 @@ class TournamentService:
         """Get detailed tournament information"""
         try:
             session = await self.db.get_session()
-        async with session:
+        async with session as session:
                 tournament = await session.execute(
                     "SELECT * FROM tournaments WHERE id = :tournament_id",
                     {"tournament_id": tournament_id}
@@ -555,7 +555,7 @@ class TournamentService:
         """Get tournaments for a specific guild"""
         try:
             session = await self.db.get_session()
-        async with session:
+        async with session as session:
                 query = "SELECT * FROM tournaments WHERE guild_id = :guild_id"
                 params = {"guild_id": guild_id}
                 

@@ -94,7 +94,7 @@ class DetailedPenaltyModal(Modal, title="Детальная настройка �
             
             # Update penalty settings
             session = await interaction.client.db_manager.get_session()
-            async with session:
+            async with session as session:
                 settings = await session.get(PenaltySettings, interaction.guild_id)
                 
                 if not settings:
@@ -233,8 +233,8 @@ class Admin(commands.Cog):
         
         try:
             # Get or create guild settings
-                    session = await self.db.get_session()
-        async with session:
+            session = await self.db.get_session()
+            async with session as session:
                 settings = await session.get(PenaltySettings, interaction.guild_id)
                 
                 if not settings:
@@ -337,8 +337,8 @@ class Admin(commands.Cog):
             
         try:
             # Get current settings
-                    session = await self.db.get_session()
-        async with session:
+            session = await self.db.get_session()
+            async with session as session:
                 settings = await session.get(PenaltySettings, interaction.guild_id)
                 
                 if not settings:
@@ -364,8 +364,8 @@ class Admin(commands.Cog):
         await interaction.response.defer()
         
         try:
-                    session = await self.db.get_session()
-        async with session:
+            session = await self.db.get_session()
+            async with session as session:
                 settings = await session.get(PenaltySettings, interaction.guild_id)
                 
                 if not settings:
@@ -520,8 +520,8 @@ class Admin(commands.Cog):
             await message.pin()
             
             # Update database with message ID
-                    session = await self.db.get_session()
-        async with session:
+            session = await self.db.get_session()
+            async with session as session:
                 settings = await session.get(PenaltySettings, interaction.guild_id)
                 
                 if not settings:
@@ -561,8 +561,8 @@ class Admin(commands.Cog):
             from models.season import Season
             from datetime import date, timedelta
             
-                    session = await self.db.get_session()
-        async with session:
+            session = await self.db.get_session()
+            async with session as session:
                 # End current active season
                 current_season = await session.execute(
                     "SELECT * FROM seasons WHERE is_active = true"
@@ -600,8 +600,8 @@ class Admin(commands.Cog):
         await interaction.response.defer()
         
         try:
-                    session = await self.db.get_session()
-        async with session:
+            session = await self.db.get_session()
+            async with session as session:
                 settings = await session.get(PenaltySettings, interaction.guild_id)
                 
                 if not settings:
@@ -706,8 +706,8 @@ class Admin(commands.Cog):
         await interaction.response.defer()
         
         try:
-                    session = await self.db.get_session()
-        async with session:
+            session = await self.db.get_session()
+            async with session as session:
                 # Get current active season
                 current_season = await session.execute(
                     "SELECT * FROM seasons WHERE is_active = true ORDER BY start_date DESC LIMIT 1"
